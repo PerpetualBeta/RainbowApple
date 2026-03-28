@@ -72,4 +72,4 @@ After editing, run `./build.sh` to recompile.
 
 ---
 
-RainbowApple is part of [Jorvik Software](https://jorviksoftware.cc/). If you find it useful, consider [buying me a coffee](https://jorviksoftware.cc/donate).
+RainbowApple is provided by [Jorvik Software](https://jorviksoftware.cc/). If you find it useful, consider [buying me a coffee](https://jorviksoftware.cc/donate).
