@@ -11,9 +11,6 @@ A tiny macOS utility that replaces the grey Apple logo in the menu bar with the 
 1. Double-click `RainbowApple.app` to launch it
 2. The rainbow Apple logo appears over the system Apple icon in the menu bar
 
-Since RainbowApple is an unsigned app, macOS may block it on first launch. If this happens:
-- Right-click `RainbowApple.app` and choose **Open**, then click **Open** again in the dialog
-- Or go to **System Settings → Privacy & Security** and click **Open Anyway**
 
 ## How It Works
 
