@@ -1,6 +1,7 @@
 import Cocoa
 import CoreText
 import SwiftUI
+import ServiceManagement
 
 // MARK: - Rainbow Apple Logo View
 
@@ -48,8 +49,6 @@ class RainbowAppleView: NSView {
 
         let stripeHeight = pathBounds.height / CGFloat(stripeColors.count)
         for (i, color) in stripeColors.enumerated() {
-            // Stripes drawn top-to-bottom: green at top, blue at bottom
-            // In non-flipped coords, top = maxY
             let y = pathBounds.maxY - stripeHeight * CGFloat(i + 1)
             let rect = CGRect(x: pathBounds.minX, y: y, width: pathBounds.width, height: stripeHeight)
             context.setFillColor(red: color.0, green: color.1, blue: color.2, alpha: 1.0)
@@ -65,21 +64,40 @@ class RainbowAppleView: NSView {
 class AppDelegate: NSObject, NSApplicationDelegate {
     var overlayWindow: NSWindow!
     var statusItem: NSStatusItem!
-    private var aboutPopover: NSPopover?
-    private var aboutMonitor: Any?
+    let updateChecker = JorvikUpdateChecker(repoName: "RainbowApple")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         createOverlayWindow()
         positionOverlay()
         createStatusItem()
+        updateChecker.checkOnSchedule()
 
-        // Observe screen parameter changes (resolution, display config)
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(screenChanged),
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
+
+        // Refresh pill on appearance change (light/dark mode)
+        DistributedNotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appearanceChanged),
+            name: NSNotification.Name("AppleInterfaceThemeChangedNotification"),
+            object: nil
+        )
+    }
+
+    @objc func appearanceChanged() {
+        if let button = statusItem.button {
+            JorvikMenuBarPill.refresh(on: button)
+        }
+    }
+
+    func applyPill() {
+        if let button = statusItem.button {
+            JorvikMenuBarPill.apply(to: button)
+        }
     }
 
     func createOverlayWindow() {
@@ -109,9 +127,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let menuBarHeight = screen.frame.height - screen.visibleFrame.height - screen.visibleFrame.origin.y
         let size = overlayWindow.frame.size
 
-        // Centre over the Apple menu icon
-        // Measured: system icon centre is ~13.25pt from screen left in Retina coords
-        // Empirical offset accounts for coordinate system differences
         let appleCentreX: CGFloat = 28.5
         let x = screenFrame.origin.x + appleCentreX - size.width / 2
         let y = screenFrame.origin.y + screenFrame.height - menuBarHeight + (menuBarHeight - size.height) / 2 + 1.5
@@ -124,25 +139,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func openAbout() {
-        guard let button = statusItem.button else { return }
-        let p = NSPopover()
-        p.behavior = .applicationDefined
-        p.animates = true
-        let hc = NSHostingController(rootView: AboutView(appName: "RainbowApple", onDismiss: { [weak self] in self?.closeAbout() }))
-        hc.view.wantsLayer = true
-        hc.view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        p.contentViewController = hc
-        p.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        aboutPopover = p
-        aboutMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            self?.closeAbout()
-        }
+        JorvikAboutView.showWindow(
+            appName: "RainbowApple",
+            repoName: "RainbowApple",
+            productPage: "utilities/rainbowapple"
+        )
     }
 
-    func closeAbout() {
-        aboutPopover?.performClose(nil)
-        aboutPopover = nil
-        if let m = aboutMonitor { NSEvent.removeMonitor(m); aboutMonitor = nil }
+    @objc func openSettings() {
+        JorvikSettingsView.showWindow(
+            appName: "RainbowApple",
+            updateChecker: updateChecker
+        ) { [weak self] in
+            MenuBarPillSettings {
+                self?.applyPill()
+            }
+        }
     }
 
     func createStatusItem() {
@@ -150,7 +162,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "apple.logo", accessibilityDescription: "RainbowApple")
                 ?? {
-                    // Fallback: draw a small coloured circle
                     let img = NSImage(size: NSSize(width: 18, height: 18))
                     img.lockFocus()
                     NSColor.systemGreen.setFill()
@@ -160,13 +171,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }()
         }
 
-        let menu = NSMenu()
-        let aboutItem = NSMenuItem(title: "About RainbowApple", action: #selector(openAbout), keyEquivalent: "")
-        aboutItem.target = self
-        menu.addItem(aboutItem)
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Quit RainbowApple", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-        statusItem.menu = menu
+        statusItem.menu = JorvikMenuBuilder.buildMenu(
+            appName: "RainbowApple",
+            aboutAction: #selector(openAbout),
+            settingsAction: #selector(openSettings),
+            target: self
+        )
+
+        applyPill()
     }
 }
 
