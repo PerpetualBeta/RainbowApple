@@ -1,2 +1,26 @@
+# Build outputs
+*.app
+*.zip
+*.saver
+.build/
+build/
+_BuildOutput/
+_CodeSignature/
+*.o
+*.d
+
+# Xcode
+xcuserdata/
+*.xcodeproj/xcuserdata/
+DerivedData/
+*.xccheckout
+*.moved-aside
+
+# macOS
 .DS_Store
-RainbowApple.app/
+.AppleDouble
+.LSOverride
+
+# Temp
+*.swp
+*.swo
