@@ -51,7 +51,23 @@ final class JorvikUpdateChecker {
         self.autoInstall = UserDefaults.standard.bool(forKey: "autoInstallUpdates")
     }
 
+    private var scheduledTimer: Timer?
+
     func checkOnSchedule() {
+        // Check immediately if enough time has elapsed
+        checkIfDue()
+
+        // Schedule a repeating timer to re-check periodically while the app
+        // is running. Menu bar utilities often run for days without relaunch,
+        // so the launch-time check alone is insufficient.
+        scheduledTimer?.invalidate()
+        guard checkInterval != .never else { return }
+        scheduledTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
+            self?.checkIfDue()
+        }
+    }
+
+    private func checkIfDue() {
         guard checkInterval != .never else { return }
 
         let lastCheck = UserDefaults.standard.object(forKey: "lastUpdateCheck") as? Date ?? .distantPast
