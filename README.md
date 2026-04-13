@@ -32,7 +32,7 @@ The overlay is click-through — clicking the Apple logo still opens the Apple m
 - Appears on all Spaces (follows you as you switch)
 - Click-through — does not interfere with the Apple menu
 - No dock icon
-- Adjusts position automatically on screen resolution changes
+- Auto-aligns to the system Apple logo on any display — including notched MacBook Pros, whose 24pt menu bars differ from the standard 22pt bar used on external displays and non-notched Macs
 - Minimal resource usage
 
 ## Quitting
@@ -55,17 +55,19 @@ open RainbowApple.app
 
 The build script compiles `main.swift` with `swiftc`, links against Cocoa, and assembles the `.app` bundle with the app icon.
 
-## Tuning
+## Alignment
 
-If the rainbow logo doesn't align perfectly with the system Apple icon on your display, you can adjust these values in `main.swift`:
+RainbowApple now auto-scales to the current menu bar height, so alignment should be correct on every display out of the box — external monitors, Studio Display, non-notched MacBooks, and notched MacBook Pros alike. The overlay re-aligns automatically when you plug or unplug a display, change resolution, or move the app between screens.
 
-| Value | Line | Purpose |
-|-------|------|---------|
-| `fontSize` | 13 | Size of the Apple logo glyph |
-| `appleCentreX` | 112 | Horizontal position (points from left edge) |
-| `y + 1.5` | 114 | Vertical offset from menu bar centre |
+If you notice a misalignment on an unusual display configuration, the reference constants live at the top of `positionOverlay()` in `main.swift`:
 
-After editing, run `./build.sh` to recompile.
+| Constant | Default | Role |
+|---|---|---|
+| Reference bar height | `22.0` | Point size the other constants were tuned against |
+| Apple centre X | `28.5` | Horizontal centre of the system Apple logo on a 22pt bar |
+| Vertical nudge | `1.5` | Fine-tune offset relative to menu bar geometric centre |
+
+The live scale factor is `menuBarHeight / 22.0`, and every position is computed from there. Adjusting the reference values is rarely needed — report the mismatch instead.
 
 ---
 

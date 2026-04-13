@@ -6,13 +6,18 @@ import ServiceManagement
 // MARK: - Rainbow Apple Logo View
 
 class RainbowAppleView: NSView {
+    /// Tuned to a 22pt menu bar by default. `positionOverlay` overrides this to
+    /// match the live menu bar height so the glyph stays the same size as the
+    /// system Apple logo (notched MacBook Pros render a 24pt bar; external /
+    /// non-notched displays render 22pt).
+    var fontSize: CGFloat = 22
+
     override var isFlipped: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
 
         let appleChar = "\u{F8FF}"
-        let fontSize: CGFloat = 22
         let ctFont = CTFontCreateWithName("SFPro-Regular" as CFString, fontSize, nil)
 
         // Get the glyph for the Apple logo character
@@ -125,13 +130,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let screen = NSScreen.main else { return }
         let screenFrame = screen.frame
         let menuBarHeight = screen.frame.height - screen.visibleFrame.height - screen.visibleFrame.origin.y
-        let size = overlayWindow.frame.size
+        guard menuBarHeight > 0 else { return }
 
-        let appleCentreX: CGFloat = 28.5
-        let x = screenFrame.origin.x + appleCentreX - size.width / 2
-        let y = screenFrame.origin.y + screenFrame.height - menuBarHeight + (menuBarHeight - size.height) / 2 + 1.5
+        // 22pt is the reference (Studio Display, external monitors, non-notched MacBooks,
+        // pre-notch iMacs). Notched MacBook Pros ship a 24pt menu bar so the notch has
+        // clearance — the system Apple glyph and its left padding scale with the bar
+        // height, so everything in the overlay scales from the ratio.
+        let scale = menuBarHeight / 22.0
 
-        overlayWindow.setFrameOrigin(NSPoint(x: x, y: y))
+        let overlaySide: CGFloat = 20 * scale
+        let appleCentreX: CGFloat = 28.5 * scale
+        let verticalNudge: CGFloat = 1.5 * scale
+
+        let x = screenFrame.origin.x + appleCentreX - overlaySide / 2
+        let y = screenFrame.origin.y + screenFrame.height - menuBarHeight
+              + (menuBarHeight - overlaySide) / 2 + verticalNudge
+
+        overlayWindow.setFrame(
+            NSRect(x: x, y: y, width: overlaySide, height: overlaySide),
+            display: true
+        )
+
+        if let view = overlayWindow.contentView as? RainbowAppleView {
+            view.fontSize = 22 * scale
+            view.needsDisplay = true
+        }
     }
 
     @objc func screenChanged() {
