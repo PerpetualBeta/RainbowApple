@@ -66,6 +66,7 @@ class RainbowAppleView: NSView {
 class AppDelegate: NSObject, NSApplicationDelegate {
     var overlayWindow: NSWindow!
     var statusItem: NSStatusItem!
+    var positionTimer: Timer?
     let updateChecker = JorvikUpdateChecker(repoName: "RainbowApple")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -78,28 +79,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         createStatusItem()
         updateChecker.checkOnSchedule()
 
+        // Immediate response to known events
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(repositionOverlay),
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
-
-        // Re-position when frontmost app changes (menu bar may be on a different display)
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
             selector: #selector(repositionOverlay),
             name: NSWorkspace.didActivateApplicationNotification,
             object: nil
         )
-
-        // Re-position on space change
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
             selector: #selector(repositionOverlay),
             name: NSWorkspace.activeSpaceDidChangeNotification,
             object: nil
         )
+
+        // Backup poll every second in .common mode so it fires during
+        // animations and tracking. Catches anything the observers miss.
+        positionTimer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.positionOverlay()
+        }
+        RunLoop.main.add(positionTimer!, forMode: .common)
 
         // Refresh pill on appearance change (light/dark mode)
         DistributedNotificationCenter.default.addObserver(
@@ -182,7 +187,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let axFrame = queryAppleMenuFrame() {
             overlayWindow.setFrame(axFrame, display: true)
             if let view = overlayWindow.contentView as? RainbowAppleView {
-                view.fontSize = axFrame.height
+                view.fontSize = axFrame.height * 0.80
                 view.needsDisplay = true
             }
             return
