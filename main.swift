@@ -2,14 +2,11 @@ import Cocoa
 import CoreText
 import SwiftUI
 import ServiceManagement
+import ApplicationServices
 
 // MARK: - Rainbow Apple Logo View
 
 class RainbowAppleView: NSView {
-    /// Tuned to a 22pt menu bar by default. `positionOverlay` overrides this to
-    /// match the live menu bar height so the glyph stays the same size as the
-    /// system Apple logo (notched MacBook Pros render a 24pt bar; external /
-    /// non-notched displays render 22pt).
     var fontSize: CGFloat = 22
 
     override var isFlipped: Bool { false }
@@ -72,6 +69,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let updateChecker = JorvikUpdateChecker(repoName: "RainbowApple")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Prompt for Accessibility permission if not already granted
+        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
+        AXIsProcessTrustedWithOptions(opts)
+
         createOverlayWindow()
         positionOverlay()
         createStatusItem()
@@ -79,8 +80,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(screenChanged),
+            selector: #selector(repositionOverlay),
             name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+
+        // Re-position when frontmost app changes (menu bar may be on a different display)
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(repositionOverlay),
+            name: NSWorkspace.didActivateApplicationNotification,
+            object: nil
+        )
+
+        // Re-position on space change
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(repositionOverlay),
+            name: NSWorkspace.activeSpaceDidChangeNotification,
             object: nil
         )
 
@@ -106,10 +123,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func createOverlayWindow() {
-        let w: CGFloat = 20
-        let h: CGFloat = 20
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: w, height: h),
+            contentRect: NSRect(x: 0, y: 0, width: 20, height: 20),
             styleMask: .borderless,
             backing: .buffered,
             defer: false
@@ -120,24 +135,71 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.mainMenuWindow)) + 2)
         window.ignoresMouseEvents = true
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
-        window.contentView = RainbowAppleView(frame: NSRect(x: 0, y: 0, width: w, height: h))
+        window.contentView = RainbowAppleView(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
         window.orderFrontRegardless()
 
         overlayWindow = window
     }
 
+    // MARK: - Accessibility API positioning
+
+    /// Query the Accessibility API for the exact frame of the Apple menu bar item.
+    /// Returns the frame in AppKit screen coordinates (bottom-left origin), or nil
+    /// if Accessibility is unavailable.
+    func queryAppleMenuFrame() -> NSRect? {
+        guard AXIsProcessTrusted() else { return nil }
+        guard let frontApp = NSWorkspace.shared.frontmostApplication else { return nil }
+
+        let appElement = AXUIElementCreateApplication(frontApp.processIdentifier)
+
+        var menuBarRef: AnyObject?
+        guard AXUIElementCopyAttributeValue(appElement, kAXMenuBarAttribute as CFString, &menuBarRef) == .success else { return nil }
+
+        var childrenRef: AnyObject?
+        guard AXUIElementCopyAttributeValue(menuBarRef as! AXUIElement, kAXChildrenAttribute as CFString, &childrenRef) == .success else { return nil }
+
+        guard let children = childrenRef as? [AXUIElement], let appleItem = children.first else { return nil }
+
+        var posRef: AnyObject?
+        var sizeRef: AnyObject?
+        guard AXUIElementCopyAttributeValue(appleItem, kAXPositionAttribute as CFString, &posRef) == .success,
+              AXUIElementCopyAttributeValue(appleItem, kAXSizeAttribute as CFString, &sizeRef) == .success else { return nil }
+
+        var point = CGPoint.zero
+        var size = CGSize.zero
+        AXValueGetValue(posRef as! AXValue, .cgPoint, &point)
+        AXValueGetValue(sizeRef as! AXValue, .cgSize, &size)
+
+        // AX coordinates: origin at top-left of primary display, Y increases downward.
+        // AppKit coordinates: origin at bottom-left of primary display, Y increases upward.
+        guard let primaryScreen = NSScreen.screens.first else { return nil }
+        let nsY = primaryScreen.frame.height - point.y - size.height
+
+        return NSRect(x: point.x, y: nsY, width: size.width, height: size.height)
+    }
+
     func positionOverlay() {
+        if let axFrame = queryAppleMenuFrame() {
+            overlayWindow.setFrame(axFrame, display: true)
+            if let view = overlayWindow.contentView as? RainbowAppleView {
+                view.fontSize = axFrame.height
+                view.needsDisplay = true
+            }
+            return
+        }
+
+        // Fallback: mathematical positioning (used when Accessibility permission
+        // has not yet been granted)
+        positionOverlayMathematical()
+    }
+
+    func positionOverlayMathematical() {
         guard let screen = NSScreen.main else { return }
         let screenFrame = screen.frame
         let menuBarHeight = screen.frame.height - screen.visibleFrame.height - screen.visibleFrame.origin.y
         guard menuBarHeight > 0 else { return }
 
-        // 22pt is the reference (Studio Display, external monitors, non-notched MacBooks,
-        // pre-notch iMacs). Notched MacBook Pros ship a 24pt menu bar so the notch has
-        // clearance — the system Apple glyph and its left padding scale with the bar
-        // height, so everything in the overlay scales from the ratio.
         let scale = menuBarHeight / 22.0
-
         let overlaySide: CGFloat = 20 * scale
         let appleCentreX: CGFloat = 28.5 * scale
         let verticalNudge: CGFloat = 1.5 * scale
@@ -157,7 +219,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc func screenChanged() {
+    @objc func repositionOverlay() {
         positionOverlay()
     }
 
