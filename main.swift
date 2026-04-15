@@ -66,7 +66,8 @@ class RainbowAppleView: NSView {
 class AppDelegate: NSObject, NSApplicationDelegate {
     var overlayWindow: NSWindow!
     var statusItem: NSStatusItem!
-    var positionTimer: Timer?
+    var positionSource: DispatchSourceTimer?
+    var lastAXFrame: NSRect?
     let updateChecker = JorvikUpdateChecker(repoName: "RainbowApple")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -99,12 +100,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
-        // Backup poll every second in .common mode so it fires during
-        // animations and tracking. Catches anything the observers miss.
-        positionTimer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.positionOverlay()
+        // GCD timer fires independently of the main run loop's mode,
+        // so it isn't stalled by space-transition animations the way
+        // NSTimer is. Dispatches to main for the actual UI work.
+        let source = DispatchSource.makeTimerSource(queue: .global(qos: .userInteractive))
+        source.schedule(deadline: .now(), repeating: .milliseconds(100))
+        source.setEventHandler { [weak self] in
+            DispatchQueue.main.async { self?.positionOverlay() }
         }
-        RunLoop.main.add(positionTimer!, forMode: .common)
+        source.resume()
+        positionSource = source
 
         // Refresh pill on appearance change (light/dark mode)
         DistributedNotificationCenter.default.addObserver(
@@ -137,6 +142,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = false
+        window.hidesOnDeactivate = false
         window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.mainMenuWindow)) + 2)
         window.ignoresMouseEvents = true
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
@@ -153,15 +159,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// if Accessibility is unavailable.
     func queryAppleMenuFrame() -> NSRect? {
         guard AXIsProcessTrusted() else { return nil }
-        guard let frontApp = NSWorkspace.shared.frontmostApplication else { return nil }
 
-        let appElement = AXUIElementCreateApplication(frontApp.processIdentifier)
-
+        // Try the frontmost app first; fall back to Finder (always running)
+        // if no app has focus — e.g. after a synthetic space switch.
         var menuBarRef: AnyObject?
-        guard AXUIElementCopyAttributeValue(appElement, kAXMenuBarAttribute as CFString, &menuBarRef) == .success else { return nil }
+        if let frontApp = NSWorkspace.shared.frontmostApplication {
+            let el = AXUIElementCreateApplication(frontApp.processIdentifier)
+            AXUIElementCopyAttributeValue(el, kAXMenuBarAttribute as CFString, &menuBarRef)
+        }
+        if menuBarRef == nil {
+            let finder = NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == "com.apple.finder" }
+            if let pid = finder?.processIdentifier {
+                let el = AXUIElementCreateApplication(pid)
+                AXUIElementCopyAttributeValue(el, kAXMenuBarAttribute as CFString, &menuBarRef)
+            }
+        }
+        guard let menuBar = menuBarRef else { return nil }
 
         var childrenRef: AnyObject?
-        guard AXUIElementCopyAttributeValue(menuBarRef as! AXUIElement, kAXChildrenAttribute as CFString, &childrenRef) == .success else { return nil }
+        guard AXUIElementCopyAttributeValue(menuBar as! AXUIElement, kAXChildrenAttribute as CFString, &childrenRef) == .success else { return nil }
 
         guard let children = childrenRef as? [AXUIElement], let appleItem = children.first else { return nil }
 
@@ -184,18 +200,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func positionOverlay() {
+        let frame: NSRect
         if let axFrame = queryAppleMenuFrame() {
-            overlayWindow.setFrame(axFrame, display: true)
-            if let view = overlayWindow.contentView as? RainbowAppleView {
-                view.fontSize = axFrame.height * 0.80
-                view.needsDisplay = true
-            }
+            lastAXFrame = axFrame
+            frame = axFrame
+        } else if let cached = lastAXFrame {
+            frame = cached
+        } else {
+            positionOverlayMathematical()
+            overlayWindow.orderFrontRegardless()
             return
         }
 
-        // Fallback: mathematical positioning (used when Accessibility permission
-        // has not yet been granted)
-        positionOverlayMathematical()
+        // Only move the window when the frame has actually changed —
+        // avoids visual artefacts from transient AX values mid-animation.
+        let current = overlayWindow.frame
+        if abs(current.origin.x - frame.origin.x) > 0.5
+            || abs(current.origin.y - frame.origin.y) > 0.5
+            || abs(current.width - frame.width) > 0.5
+            || abs(current.height - frame.height) > 0.5 {
+            overlayWindow.setFrame(frame, display: true)
+            if let view = overlayWindow.contentView as? RainbowAppleView {
+                view.fontSize = frame.height * 0.80
+                view.needsDisplay = true
+            }
+        }
+
+        overlayWindow.orderFrontRegardless()
     }
 
     func positionOverlayMathematical() {
