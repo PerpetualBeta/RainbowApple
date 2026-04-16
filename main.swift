@@ -90,14 +90,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
-            selector: #selector(appDidActivate(_:)),
+            selector: #selector(repositionOverlay),
             name: NSWorkspace.didActivateApplicationNotification,
-            object: nil
-        )
-        NSWorkspace.shared.notificationCenter.addObserver(
-            self,
-            selector: #selector(appDidDeactivate(_:)),
-            name: NSWorkspace.didDeactivateApplicationNotification,
             object: nil
         )
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -113,7 +107,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let source = DispatchSource.makeTimerSource(queue: .global(qos: .userInteractive))
         source.schedule(deadline: .now(), repeating: .milliseconds(100))
         source.setEventHandler { [weak self] in
-            DispatchQueue.main.async { self?.positionOverlay() }
+            guard let self else { return }
+            let mc = Self.isMissionControlActive()
+            DispatchQueue.main.async {
+                if mc && !self.missionControlActive {
+                    self.missionControlActive = true
+                    self.overlayWindow.orderOut(nil)
+                } else if !mc && self.missionControlActive {
+                    self.missionControlActive = false
+                    self.positionOverlay()
+                } else if !mc {
+                    self.positionOverlay()
+                }
+            }
         }
         source.resume()
         positionSource = source
@@ -268,22 +274,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         positionOverlay()
     }
 
-    @objc func appDidActivate(_ note: Notification) {
-        guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-        if app.bundleIdentifier == "com.apple.dock" {
-            missionControlActive = true
-            overlayWindow.orderOut(nil)
-        } else {
-            missionControlActive = false
-            positionOverlay()
-        }
-    }
-
-    @objc func appDidDeactivate(_ note: Notification) {
-        guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-        if app.bundleIdentifier == "com.apple.dock" {
-            missionControlActive = false
-            positionOverlay()
+    /// Detect Mission Control by checking for Dock-owned windows at layer 18,
+    /// which only appear while Mission Control is open.
+    private static func isMissionControlActive() -> Bool {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else { return false }
+        return list.contains { w in
+            (w["kCGWindowOwnerName"] as? String) == "Dock" && (w["kCGWindowLayer"] as? Int) == 18
         }
     }
 
