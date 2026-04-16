@@ -68,6 +68,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     var positionSource: DispatchSourceTimer?
     var lastAXFrame: NSRect?
+    var missionControlActive = false
     let updateChecker = JorvikUpdateChecker(repoName: "RainbowApple")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -89,8 +90,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
-            selector: #selector(repositionOverlay),
+            selector: #selector(appDidActivate(_:)),
             name: NSWorkspace.didActivateApplicationNotification,
+            object: nil
+        )
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(appDidDeactivate(_:)),
+            name: NSWorkspace.didDeactivateApplicationNotification,
             object: nil
         )
         NSWorkspace.shared.notificationCenter.addObserver(
@@ -200,6 +207,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func positionOverlay() {
+        guard !missionControlActive else { return }
+
         let frame: NSRect
         if let axFrame = queryAppleMenuFrame() {
             lastAXFrame = axFrame
@@ -257,6 +266,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func repositionOverlay() {
         positionOverlay()
+    }
+
+    @objc func appDidActivate(_ note: Notification) {
+        guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+        if app.bundleIdentifier == "com.apple.dock" {
+            missionControlActive = true
+            overlayWindow.orderOut(nil)
+        } else {
+            missionControlActive = false
+            positionOverlay()
+        }
+    }
+
+    @objc func appDidDeactivate(_ note: Notification) {
+        guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+        if app.bundleIdentifier == "com.apple.dock" {
+            missionControlActive = false
+            positionOverlay()
+        }
     }
 
     @objc func openAbout() {
