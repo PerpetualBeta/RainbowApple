@@ -7,29 +7,28 @@ import ApplicationServices
 // MARK: - Rainbow Apple Logo View
 
 class RainbowAppleView: NSView {
+    /// Scale factor for the rainbow fill — 8% bigger than the system Apple
+    /// glyph so sub-pixel edges don't bleed through.
+    static let rainbowScale: CGFloat = 1.08
+    /// Scale factor for the backdrop mask — bigger than the rainbow so the
+    /// menu-bar-coloured backdrop shows as a thin halo around the rainbow
+    /// (rather than filling the whole window as a square).
+    static let backdropScale: CGFloat = 1.25
+
     var fontSize: CGFloat = 22
 
     override var isFlipped: Bool { false }
 
-    override func draw(_ dirtyRect: NSRect) {
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-
+    /// Build the centred Apple glyph path at a given scale. Returns nil if
+    /// font lookup or path creation fails.
+    static func applePath(in bounds: NSRect, fontSize: CGFloat, scale: CGFloat) -> CGPath? {
         let appleChar = "\u{F8FF}"
         let ctFont = CTFontCreateWithName("SFPro-Regular" as CFString, fontSize, nil)
-
-        // Get the glyph for the Apple logo character
         var unichars = [UniChar](appleChar.utf16)
         var glyphs = [CGGlyph](repeating: 0, count: unichars.count)
-        guard CTFontGetGlyphsForCharacters(ctFont, &unichars, &glyphs, unichars.count) else { return }
+        guard CTFontGetGlyphsForCharacters(ctFont, &unichars, &glyphs, unichars.count) else { return nil }
+        guard let glyphPath = CTFontCreatePathForGlyph(ctFont, glyphs[0], nil) else { return nil }
 
-        // Get the glyph path
-        guard let glyphPath = CTFontCreatePathForGlyph(ctFont, glyphs[0], nil) else { return }
-
-        // Centre the glyph in the view, then scale it up slightly so the
-        // rainbow fill extends beyond the underlying system Apple logo.
-        // Without this, sub-pixel rendering differences let the original
-        // monochrome logo bleed through at the edges.
-        let scaleFactor: CGFloat = 1.08
         let glyphBBox = glyphPath.boundingBox
         let tx = (bounds.width - glyphBBox.width) / 2 - glyphBBox.origin.x
         let ty = (bounds.height - glyphBBox.height) / 2 - glyphBBox.origin.y
@@ -37,12 +36,15 @@ class RainbowAppleView: NSView {
         let cy = bounds.height / 2
         var transform = CGAffineTransform.identity
             .translatedBy(x: cx, y: cy)
-            .scaledBy(x: scaleFactor, y: scaleFactor)
+            .scaledBy(x: scale, y: scale)
             .translatedBy(x: -cx, y: -cy)
             .translatedBy(x: tx, y: ty)
-        guard let centredPath = glyphPath.copy(using: &transform) else { return }
+        return glyphPath.copy(using: &transform)
+    }
 
-        // Get the ACTUAL bounding box of the centred glyph — gradient must span this, not the view
+    override func draw(_ dirtyRect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        guard let centredPath = Self.applePath(in: bounds, fontSize: fontSize, scale: Self.rainbowScale) else { return }
         let pathBounds = centredPath.boundingBox
 
         context.saveGState()
@@ -68,6 +70,51 @@ class RainbowAppleView: NSView {
         }
 
         context.restoreGState()
+    }
+}
+
+// MARK: - Menu-bar-matching backdrop, masked to an Apple-shaped halo
+
+/// Visual-effect backdrop that masks itself to a slightly-enlarged Apple
+/// glyph shape. Provides a thin menu-bar-coloured halo around the rainbow
+/// fill — just enough to mask the underlying system Apple logo without
+/// revealing a rectangular patch.
+final class MenuBarBackdrop: NSVisualEffectView {
+    var fontSize: CGFloat = 22 {
+        didSet { needsLayout = true }
+    }
+
+    override func layout() {
+        super.layout()
+        wantsLayer = true
+        guard let layer = self.layer else { return }
+        guard let basePath = RainbowAppleView.applePath(
+            in: bounds,
+            fontSize: fontSize,
+            scale: RainbowAppleView.backdropScale
+        ) else {
+            layer.mask = nil
+            return
+        }
+        // Dilate by unioning the path with a stroked outline of itself.
+        // Uniform scaling alone doesn't grow thin features (stem, leaf)
+        // enough in absolute pixel terms; this adds material perpendicular
+        // to every edge, which is exactly what thin features need.
+        let dilationWidth: CGFloat = 2.0
+        let strokedOutline = basePath.copy(
+            strokingWithWidth: dilationWidth,
+            lineCap: .round,
+            lineJoin: .round,
+            miterLimit: 10
+        )
+        let expanded = CGMutablePath()
+        expanded.addPath(basePath)
+        expanded.addPath(strokedOutline)
+
+        let mask = CAShapeLayer()
+        mask.path = expanded
+        mask.fillRule = .nonZero
+        layer.mask = mask
     }
 }
 
@@ -173,7 +220,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // opaque where the rainbow doesn't reach — the underlying system
         // Apple logo is hidden by the backdrop rather than bleeding through.
         let bounds = NSRect(x: 0, y: 0, width: 20, height: 20)
-        let backdrop = NSVisualEffectView(frame: bounds)
+        let backdrop = MenuBarBackdrop(frame: bounds)
         backdrop.material = .menu
         backdrop.blendingMode = .behindWindow
         backdrop.state = .active
@@ -260,8 +307,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             || abs(current.height - frame.height) > 0.5 {
             overlayWindow.setFrame(frame, display: true)
             if let view = rainbowView {
-                view.fontSize = frame.height * 0.80
+                let size = frame.height * 0.80
+                view.fontSize = size
                 view.needsDisplay = true
+                backdropView?.fontSize = size
             }
         }
 
@@ -289,14 +338,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         if let view = rainbowView {
-            view.fontSize = 22 * scale
+            let size = 22 * scale
+            view.fontSize = size
             view.needsDisplay = true
+            backdropView?.fontSize = size
         }
     }
 
     /// The RainbowAppleView inside the visual-effect backdrop.
     private var rainbowView: RainbowAppleView? {
         overlayWindow.contentView?.subviews.compactMap { $0 as? RainbowAppleView }.first
+    }
+
+    /// The masked visual-effect backdrop (also the window's contentView).
+    private var backdropView: MenuBarBackdrop? {
+        overlayWindow.contentView as? MenuBarBackdrop
     }
 
     @objc func repositionOverlay() {
