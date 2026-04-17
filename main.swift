@@ -25,11 +25,21 @@ class RainbowAppleView: NSView {
         // Get the glyph path
         guard let glyphPath = CTFontCreatePathForGlyph(ctFont, glyphs[0], nil) else { return }
 
-        // Centre the glyph in the view
+        // Centre the glyph in the view, then scale it up slightly so the
+        // rainbow fill extends beyond the underlying system Apple logo.
+        // Without this, sub-pixel rendering differences let the original
+        // monochrome logo bleed through at the edges.
+        let scaleFactor: CGFloat = 1.08
         let glyphBBox = glyphPath.boundingBox
         let tx = (bounds.width - glyphBBox.width) / 2 - glyphBBox.origin.x
         let ty = (bounds.height - glyphBBox.height) / 2 - glyphBBox.origin.y
-        var transform = CGAffineTransform(translationX: tx, y: ty)
+        let cx = bounds.width / 2
+        let cy = bounds.height / 2
+        var transform = CGAffineTransform.identity
+            .translatedBy(x: cx, y: cy)
+            .scaledBy(x: scaleFactor, y: scaleFactor)
+            .translatedBy(x: -cx, y: -cy)
+            .translatedBy(x: tx, y: ty)
         guard let centredPath = glyphPath.copy(using: &transform) else { return }
 
         // Get the ACTUAL bounding box of the centred glyph — gradient must span this, not the view
@@ -159,7 +169,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.mainMenuWindow)) + 2)
         window.ignoresMouseEvents = true
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
-        window.contentView = RainbowAppleView(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
+        // Use a menu-bar-matching visual effect backdrop so the overlay is
+        // opaque where the rainbow doesn't reach — the underlying system
+        // Apple logo is hidden by the backdrop rather than bleeding through.
+        let bounds = NSRect(x: 0, y: 0, width: 20, height: 20)
+        let backdrop = NSVisualEffectView(frame: bounds)
+        backdrop.material = .menu
+        backdrop.blendingMode = .behindWindow
+        backdrop.state = .active
+        backdrop.autoresizingMask = [.width, .height]
+
+        let rainbow = RainbowAppleView(frame: bounds)
+        rainbow.autoresizingMask = [.width, .height]
+        backdrop.addSubview(rainbow)
+
+        window.contentView = backdrop
         window.orderFrontRegardless()
 
         overlayWindow = window
@@ -235,7 +259,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             || abs(current.width - frame.width) > 0.5
             || abs(current.height - frame.height) > 0.5 {
             overlayWindow.setFrame(frame, display: true)
-            if let view = overlayWindow.contentView as? RainbowAppleView {
+            if let view = rainbowView {
                 view.fontSize = frame.height * 0.80
                 view.needsDisplay = true
             }
@@ -264,10 +288,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             display: true
         )
 
-        if let view = overlayWindow.contentView as? RainbowAppleView {
+        if let view = rainbowView {
             view.fontSize = 22 * scale
             view.needsDisplay = true
         }
+    }
+
+    /// The RainbowAppleView inside the visual-effect backdrop.
+    private var rainbowView: RainbowAppleView? {
+        overlayWindow.contentView?.subviews.compactMap { $0 as? RainbowAppleView }.first
     }
 
     @objc func repositionOverlay() {
