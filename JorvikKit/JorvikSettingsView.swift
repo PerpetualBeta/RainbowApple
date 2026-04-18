@@ -120,6 +120,12 @@ struct JorvikSettingsView<AppSettings: View>: View {
     }
 
     static func showWindow(appName: String, updateChecker: JorvikUpdateChecker, @ViewBuilder appSettings: @escaping () -> AppSettings) {
+        if let window = JorvikSettingsWindowCache.existingWindow {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
         let view = JorvikSettingsView(
             appName: appName,
             updateChecker: updateChecker,
@@ -139,5 +145,13 @@ struct JorvikSettingsView<AppSettings: View>: View {
         JorvikWindowHelper.centreOnActiveDisplay(window)
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        JorvikSettingsWindowCache.existingWindow = window
     }
+}
+
+/// Non-generic cache for the settings window instance. `JorvikSettingsView`
+/// is generic over the app-specific settings type, and Swift doesn't allow
+/// static stored properties inside generic types — so the cache sits here.
+private enum JorvikSettingsWindowCache {
+    static var existingWindow: NSWindow?
 }
