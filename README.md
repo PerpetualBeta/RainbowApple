@@ -4,12 +4,16 @@ A tiny macOS utility that replaces the grey Apple logo in the menu bar with the 
 
 ## Requirements
 
-- macOS 12 (Monterey) or later
+- macOS 14 (Sonoma) or later
 
 ## Installation
 
-1. Double-click `RainbowApple.app` to launch it
-2. The rainbow Apple logo appears over the system Apple icon in the menu bar
+Two formats on every release — both signed and notarised, pick whichever suits:
+
+- **[Installer (`.pkg`)](https://github.com/PerpetualBeta/RainbowApple/releases/latest/download/RainbowApple.pkg)** — recommended for first-time installs. Double-click to run; macOS Installer places the app in `/Applications` without quarantine or App Translocation.
+- **[Download (`.zip`)](https://github.com/PerpetualBeta/RainbowApple/releases/latest)** — unzip and drag `RainbowApple.app` to your Applications folder.
+
+After installation, launch RainbowApple — the rainbow Apple logo appears over the system Apple icon in the menu bar.
 
 
 ## How It Works
