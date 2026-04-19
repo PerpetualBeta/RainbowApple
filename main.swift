@@ -10,10 +10,11 @@ class RainbowAppleView: NSView {
     /// Scale factor for the rainbow fill — 8% bigger than the system Apple
     /// glyph so sub-pixel edges don't bleed through.
     static let rainbowScale: CGFloat = 1.08
-    /// Scale factor for the backdrop mask — bigger than the rainbow so the
-    /// menu-bar-coloured backdrop shows as a thin halo around the rainbow
-    /// (rather than filling the whole window as a square).
-    static let backdropScale: CGFloat = 1.25
+    /// Scale factor for the backdrop mask — only fractionally bigger than
+    /// the rainbow. The backdrop exists to cover sub-pixel grey bleed from
+    /// the system Apple beneath; its opaque core should sit almost entirely
+    /// under the rainbow so no visible backdrop-coloured ring shows.
+    static let backdropScale: CGFloat = 1.08
 
     var fontSize: CGFloat = 22
 
@@ -76,13 +77,24 @@ class RainbowAppleView: NSView {
 // MARK: - Menu-bar-matching backdrop, masked to an Apple-shaped halo
 
 /// Visual-effect backdrop that masks itself to a slightly-enlarged Apple
-/// glyph shape. Provides a thin menu-bar-coloured halo around the rainbow
-/// fill — just enough to mask the underlying system Apple logo without
-/// revealing a rectangular patch.
+/// glyph shape with a feathered outer edge, so the backdrop fades into
+/// the menu-bar background rather than reading as a defined halo ring.
 final class MenuBarBackdrop: NSVisualEffectView {
     var fontSize: CGFloat = 22 {
-        didSet { needsLayout = true }
+        didSet {
+            cachedMaskImage = nil
+            cachedMaskKey = nil
+            needsLayout = true
+        }
     }
+
+    private struct MaskKey: Equatable {
+        let size: CGSize
+        let fontSize: CGFloat
+        let backingScale: CGFloat
+    }
+    private var cachedMaskImage: CGImage?
+    private var cachedMaskKey: MaskKey?
 
     override func layout() {
         super.layout()
@@ -100,7 +112,7 @@ final class MenuBarBackdrop: NSVisualEffectView {
         // Uniform scaling alone doesn't grow thin features (stem, leaf)
         // enough in absolute pixel terms; this adds material perpendicular
         // to every edge, which is exactly what thin features need.
-        let dilationWidth: CGFloat = 2.0
+        let dilationWidth: CGFloat = 0.5
         let strokedOutline = basePath.copy(
             strokingWithWidth: dilationWidth,
             lineCap: .round,
@@ -111,10 +123,76 @@ final class MenuBarBackdrop: NSVisualEffectView {
         expanded.addPath(basePath)
         expanded.addPath(strokedOutline)
 
-        let mask = CAShapeLayer()
-        mask.path = expanded
-        mask.fillRule = .nonZero
+        let backingScale = window?.backingScaleFactor
+            ?? NSScreen.main?.backingScaleFactor
+            ?? 2.0
+        let key = MaskKey(size: bounds.size, fontSize: fontSize, backingScale: backingScale)
+
+        let maskImage: CGImage
+        if let cached = cachedMaskImage, cachedMaskKey == key {
+            maskImage = cached
+        } else if let generated = Self.makeFeatheredMask(
+            path: expanded,
+            size: bounds.size,
+            backingScale: backingScale,
+            featherRadius: bounds.height * 0.20
+        ) {
+            cachedMaskImage = generated
+            cachedMaskKey = key
+            maskImage = generated
+        } else {
+            layer.mask = nil
+            return
+        }
+
+        let mask = CALayer()
+        mask.frame = bounds
+        mask.contents = maskImage
+        mask.contentsScale = backingScale
         layer.mask = mask
+    }
+
+    /// Render the dilated apple path to an alpha-mask CGImage with a soft
+    /// outer feather. Pass 1 fills the path opaque (hard core over the
+    /// system Apple); pass 2 strokes it with a shadow applied, which lays
+    /// down a feathered band of partial alpha just outside the core.
+    private static func makeFeatheredMask(
+        path: CGPath,
+        size: CGSize,
+        backingScale: CGFloat,
+        featherRadius: CGFloat
+    ) -> CGImage? {
+        let pixelWidth = Int((size.width * backingScale).rounded())
+        let pixelHeight = Int((size.height * backingScale).rounded())
+        guard pixelWidth > 0, pixelHeight > 0 else { return nil }
+
+        guard let context = CGContext(
+            data: nil,
+            width: pixelWidth,
+            height: pixelHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        context.scaleBy(x: backingScale, y: backingScale)
+
+        let white = CGColor(red: 1, green: 1, blue: 1, alpha: 1)
+
+        // Pass 1 — opaque core.
+        context.setFillColor(white)
+        context.addPath(path)
+        context.fillPath()
+
+        // Pass 2 — shadowed stroke, producing the feathered outer band.
+        context.setShadow(offset: .zero, blur: featherRadius, color: white)
+        context.setStrokeColor(white)
+        context.setLineWidth(0.5)
+        context.addPath(path)
+        context.strokePath()
+
+        return context.makeImage()
     }
 }
 
@@ -221,7 +299,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Apple logo is hidden by the backdrop rather than bleeding through.
         let bounds = NSRect(x: 0, y: 0, width: 20, height: 20)
         let backdrop = MenuBarBackdrop(frame: bounds)
-        backdrop.material = .menu
+        backdrop.material = .titlebar
         backdrop.blendingMode = .behindWindow
         backdrop.state = .active
         backdrop.autoresizingMask = [.width, .height]
