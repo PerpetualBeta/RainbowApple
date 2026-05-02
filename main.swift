@@ -207,7 +207,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let updateChecker = JorvikUpdateChecker(repoName: "RainbowApple")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        UserDefaults.standard.register(defaults: ["menuBarPillEnabled": true])
         migrateLegacyPillColorKey()
 
         // Prompt for Accessibility permission if not already granted
