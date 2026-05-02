@@ -39,13 +39,18 @@ The overlay is click-through — clicking the Apple logo still opens the Apple m
 - Auto-aligns to the system Apple logo on any display — including notched MacBook Pros, whose 24pt menu bars differ from the standard 22pt bar used on external displays and non-notched Macs
 - Minimal resource usage
 
+## Settings
+
+Right-click the small Apple icon in the menu bar and choose **Settings…** to configure:
+
+- **Accessibility** — permission status with grant button
+- **Menu bar icon pill** — optional grey background for stronger contrast on busy or wallpaper-tinted menu bars (off by default)
+- **Launch at Login** — start RainbowApple automatically when you log in
+- **Auto-update** — check for new versions on a configurable schedule with optional automatic installation
+
 ## Quitting
 
-Click the small Apple icon in the right side of the menu bar (the status bar item) to reveal the **Quit RainbowApple** option.
-
-## Starting at Login
-
-To have RainbowApple launch automatically, add it to **System Settings → General → Login Items**.
+Right-click the small Apple icon in the menu bar (the status bar item) and choose **Quit RainbowApple**.
 
 ## Building from Source
 
