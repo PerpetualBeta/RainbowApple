@@ -12,6 +12,7 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 swiftc -O -o "$APP_BUNDLE/Contents/MacOS/$APP_NAME" \
     "$SCRIPT_DIR/main.swift" \
     "$SCRIPT_DIR/AboutView.swift" \
+    "$SCRIPT_DIR/RainbowAppleSettingsContent.swift" \
     "$SCRIPT_DIR"/JorvikKit/*.swift \
     -framework Cocoa \
     -framework SwiftUI \

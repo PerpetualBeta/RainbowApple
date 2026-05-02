@@ -1,85 +1,113 @@
 import AppKit
 import SwiftUI
 
-/// Adds a configurable background pill behind an NSStatusBarButton.
-/// Handles light/dark mode transitions automatically.
+/// Builds menu-bar icons, optionally with an always-visible grey background pill.
+/// Composes pill + symbol into a single NSImage via a drawing handler so colours
+/// re-evaluate on every paint, automatically tracking light/dark appearance —
+/// the same pattern ActiveSpace uses.
 enum JorvikMenuBarPill {
 
-    private static let pillLayerName = "jorvikPill"
-
-    /// Applies or removes the pill background on a status bar button.
-    /// Call this on launch and whenever settings change.
-    static func apply(to button: NSStatusBarButton) {
-        let enabled = UserDefaults.standard.bool(forKey: "menuBarPillEnabled")
-
-        // Remove existing pill layer
-        button.wantsLayer = true
-        button.layer?.sublayers?.removeAll { $0.name == pillLayerName }
-
-        guard enabled else { return }
-
-        let pill = CALayer()
-        pill.name = pillLayerName
-        pill.cornerRadius = 4
-        pill.masksToBounds = true
-
-        updatePillColor(pill)
-
-        // Insert behind content
-        button.layer?.insertSublayer(pill, at: 0)
-
-        // Size to button
-        pill.frame = button.bounds.insetBy(dx: 1, dy: 2)
-
-        // Observe frame changes
-        pill.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+    static var isEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "menuBarPillEnabled")
     }
 
-    /// Updates pill colour based on stored preference and current appearance.
-    static func updatePillColor(_ layer: CALayer) {
-        let data = UserDefaults.standard.data(forKey: "menuBarPillColor")
-        let baseColor: NSColor
-        if let data, let archived = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data) {
-            baseColor = archived
-        } else {
-            baseColor = NSColor.controlAccentColor
+    /// Produces a status-bar icon for the given SF Symbol.
+    /// - `tint`: optional palette colour baked into the symbol (used for alert states).
+    ///   When `nil` and the pill is off, the symbol is returned as a template image
+    ///   so AppKit handles system tinting. When `nil` and the pill is on, the symbol
+    ///   is drawn in a contrast colour chosen against the pill background.
+    static func icon(
+        symbolName: String,
+        pointSize: CGFloat = 15,
+        weight: NSFont.Weight = .regular,
+        tint: NSColor? = nil,
+        accessibilityDescription: String?
+    ) -> NSImage? {
+        guard let symbol = NSImage(
+            systemSymbolName: symbolName,
+            accessibilityDescription: accessibilityDescription
+        ) else { return nil }
+
+        let symbolConfig = NSImage.SymbolConfiguration(pointSize: pointSize, weight: weight)
+
+        if isEnabled {
+            return composedPillIcon(symbol: symbol, symbolConfig: symbolConfig, tint: tint)
         }
 
-        // Adapt opacity for current appearance
-        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let opacity: Float = isDark ? 0.35 : 0.25
-
-        layer.backgroundColor = baseColor.cgColor
-        layer.opacity = opacity
-    }
-
-    /// Refreshes the pill on the given button (call on appearance change).
-    static func refresh(on button: NSStatusBarButton) {
-        guard let pill = button.layer?.sublayers?.first(where: { $0.name == pillLayerName }) else { return }
-        updatePillColor(pill)
-        pill.frame = button.bounds.insetBy(dx: 1, dy: 2)
-    }
-
-    /// Stores the pill colour preference.
-    static func saveColor(_ color: NSColor) {
-        if let data = try? NSKeyedArchiver.archivedData(withRootObject: color, requiringSecureCoding: true) {
-            UserDefaults.standard.set(data, forKey: "menuBarPillColor")
+        if let tint {
+            let config = symbolConfig.applying(
+                NSImage.SymbolConfiguration(paletteColors: [tint, tint])
+            )
+            let sized = symbol.withSymbolConfiguration(config) ?? symbol
+            sized.isTemplate = false
+            return sized
         }
+
+        let sized = symbol.withSymbolConfiguration(symbolConfig) ?? symbol
+        sized.isTemplate = true
+        return sized
     }
 
-    /// Reads the stored pill colour.
-    static func loadColor() -> Color {
-        guard let data = UserDefaults.standard.data(forKey: "menuBarPillColor"),
-              let nsColor = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSColor.self, from: data)
-        else { return Color.accentColor }
-        return Color(nsColor: nsColor)
+    private static func composedPillIcon(
+        symbol: NSImage,
+        symbolConfig: NSImage.SymbolConfiguration,
+        tint: NSColor?
+    ) -> NSImage {
+        // Measure the configured glyph so the pill wraps it with consistent padding.
+        let sizedGlyph = symbol.withSymbolConfiguration(symbolConfig) ?? symbol
+        let glyphSize = sizedGlyph.size
+
+        let hPad: CGFloat = 6
+        let vPad: CGFloat = 2
+        let size = NSSize(
+            width:  max(22, glyphSize.width  + hPad * 2),
+            height:       glyphSize.height + vPad * 2
+        )
+
+        let image = NSImage(size: size, flipped: false) { rect in
+            let isDark = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+
+            // Light mode: dark pill; dark mode: light pill. Alpha baked in — no layer.opacity.
+            let pillColor: NSColor = isDark ? NSColor(white: 0.85, alpha: 1.0)
+                                            : NSColor(white: 0.20, alpha: 0.85)
+
+            // Default glyph colour contrasts with the pill; alert tints override.
+            let defaultGlyphColor: NSColor = isDark ? NSColor(white: 0.10, alpha: 1.0) : .white
+            let glyphColor = tint ?? defaultGlyphColor
+
+            // Fill the pill.
+            let path = NSBezierPath(
+                roundedRect: rect,
+                xRadius: rect.height / 2,
+                yRadius: rect.height / 2
+            )
+            pillColor.setFill()
+            path.fill()
+
+            // Centre the tinted glyph on the pill.
+            let tinted = symbol.withSymbolConfiguration(
+                symbolConfig.applying(NSImage.SymbolConfiguration(paletteColors: [glyphColor, glyphColor]))
+            ) ?? sizedGlyph
+            let drawn = tinted.size
+            let gx = (rect.width  - drawn.width)  / 2
+            let gy = (rect.height - drawn.height) / 2
+            tinted.draw(
+                at: NSPoint(x: gx, y: gy),
+                from: .zero,
+                operation: .sourceOver,
+                fraction: 1.0
+            )
+
+            return true
+        }
+        image.isTemplate = false
+        return image
     }
 }
 
 /// SwiftUI settings section for the menu bar pill. Drop into JorvikSettingsView's appSettings closure.
 struct MenuBarPillSettings: View {
-    @State private var enabled = UserDefaults.standard.bool(forKey: "menuBarPillEnabled")
-    @State private var pillColor: Color = JorvikMenuBarPill.loadColor()
+    @State private var enabled = JorvikMenuBarPill.isEnabled
     var onChanged: (() -> Void)?
 
     var body: some View {
@@ -89,14 +117,6 @@ struct MenuBarPillSettings: View {
                     UserDefaults.standard.set(newValue, forKey: "menuBarPillEnabled")
                     onChanged?()
                 }
-
-            if enabled {
-                ColorPicker("Pill colour", selection: $pillColor, supportsOpacity: false)
-                    .onChange(of: pillColor) { _, newValue in
-                        JorvikMenuBarPill.saveColor(NSColor(newValue))
-                        onChanged?()
-                    }
-            }
         }
     }
 }

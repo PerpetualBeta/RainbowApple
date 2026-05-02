@@ -207,6 +207,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     let updateChecker = JorvikUpdateChecker(repoName: "RainbowApple")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        UserDefaults.standard.register(defaults: ["menuBarPillEnabled": true])
+        migrateLegacyPillColorKey()
+
         // Prompt for Accessibility permission if not already granted
         let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
         AXIsProcessTrustedWithOptions(opts)
@@ -259,25 +262,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         source.resume()
         positionSource = source
 
-        // Refresh pill on appearance change (light/dark mode)
-        DistributedNotificationCenter.default.addObserver(
-            self,
-            selector: #selector(appearanceChanged),
-            name: NSNotification.Name("AppleInterfaceThemeChangedNotification"),
-            object: nil
-        )
     }
 
-    @objc func appearanceChanged() {
-        if let button = statusItem.button {
-            JorvikMenuBarPill.refresh(on: button)
-        }
+    // One-shot removal of the user-chosen pill colour key from the old design.
+    // The new pill uses fixed grey/light colours; the key is dead weight.
+    private func migrateLegacyPillColorKey() {
+        let migrated = "didMigratePillColorV2"
+        if UserDefaults.standard.bool(forKey: migrated) { return }
+        UserDefaults.standard.removeObject(forKey: "menuBarPillColor")
+        UserDefaults.standard.set(true, forKey: migrated)
     }
 
     func applyPill() {
-        if let button = statusItem.button {
-            JorvikMenuBarPill.apply(to: button)
-        }
+        statusItem.button?.image = JorvikMenuBarPill.icon(
+            symbolName: "apple.logo",
+            accessibilityDescription: "RainbowApple"
+        )
     }
 
     func createOverlayWindow() {
@@ -459,25 +459,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             appName: "RainbowApple",
             updateChecker: updateChecker
         ) { [weak self] in
-            MenuBarPillSettings {
-                self?.applyPill()
-            }
+            RainbowAppleSettingsContent(onPillChanged: { self?.applyPill() })
         }
     }
 
     func createStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "apple.logo", accessibilityDescription: "RainbowApple")
-                ?? {
-                    let img = NSImage(size: NSSize(width: 18, height: 18))
-                    img.lockFocus()
-                    NSColor.systemGreen.setFill()
-                    NSBezierPath(ovalIn: NSRect(x: 3, y: 3, width: 12, height: 12)).fill()
-                    img.unlockFocus()
-                    return img
-                }()
-        }
 
         statusItem.menu = JorvikMenuBuilder.buildMenu(
             appName: "RainbowApple",
