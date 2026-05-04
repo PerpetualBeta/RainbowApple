@@ -34,39 +34,10 @@ struct JorvikSettingsView<AppSettings: View>: View {
                         }
                 }
 
-                Section("Updates") {
-                    Picker("Check for updates", selection: $updateChecker.checkInterval) {
-                        ForEach(UpdateCheckInterval.allCases) { interval in
-                            Text(interval.label).tag(interval)
-                        }
-                    }
-
-                    Toggle("Auto-install updates", isOn: $updateChecker.autoInstall)
-                        .help("When enabled, updates are downloaded and installed automatically. The app will relaunch after installing.")
-
-                    HStack {
-                        updateStatusView
-
-                        Spacer()
-
-                        if case .available(_, _) = updateChecker.status {
-                            if updateChecker.autoInstall {
-                                Button("Install Now") {
-                                    Task { await updateChecker.checkNow() }
-                                }
-                            } else {
-                                Button("Download") {
-                                    updateChecker.openReleasePage()
-                                }
-                            }
-                        }
-
-                        Button("Check Now") {
-                            Task { await updateChecker.checkNow() }
-                        }
-                        .disabled(updateChecker.status == .checking)
-                    }
-                }
+                // Legacy Updates section removed during Sparkle 2.x migration.
+                // Sparkle owns checking, downloading, and installation via
+                // its own user-facing prompt; manual triggering lives on
+                // the right-click menu's "Check for Updates…" entry.
             }
             .formStyle(.grouped)
 
@@ -80,43 +51,7 @@ struct JorvikSettingsView<AppSettings: View>: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
         }
-        .frame(width: 420, height: 500)
-    }
-
-    @ViewBuilder
-    private var updateStatusView: some View {
-        switch updateChecker.status {
-        case .unknown:
-            Text("Not checked yet")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        case .checking:
-            HStack(spacing: 4) {
-                ProgressView().controlSize(.small)
-                Text("Checking...")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        case .upToDate(let version):
-            Label("Up to date (v\(version))", systemImage: "checkmark.circle.fill")
-                .font(.caption)
-                .foregroundStyle(.green)
-        case .available(let version, _):
-            Label("Update available: v\(version)", systemImage: "arrow.down.circle.fill")
-                .font(.caption)
-                .foregroundStyle(.orange)
-        case .downloading(let progress):
-            HStack(spacing: 4) {
-                ProgressView().controlSize(.small)
-                Text(progress)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        case .error(let message):
-            Label(message, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
-                .foregroundStyle(.red)
-        }
+        .frame(width: 420, height: 400)
     }
 
     static func showWindow(appName: String, updateChecker: JorvikUpdateChecker, @ViewBuilder appSettings: @escaping () -> AppSettings) {

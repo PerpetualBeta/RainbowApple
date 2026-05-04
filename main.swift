@@ -3,6 +3,7 @@ import CoreText
 import SwiftUI
 import ServiceManagement
 import ApplicationServices
+import Sparkle
 
 // MARK: - Rainbow Apple Logo View
 
@@ -205,6 +206,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var lastAXFrame: NSRect?
     var missionControlActive = false
     let updateChecker = JorvikUpdateChecker(repoName: "RainbowApple")
+    let sparkleUserDriverDelegate = RainbowAppleUserDriverDelegate()
+    lazy var sparkleUpdater = SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: nil,
+        userDriverDelegate: sparkleUserDriverDelegate
+    )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         migrateLegacyPillColorKey()
@@ -216,7 +223,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         createOverlayWindow()
         positionOverlay()
         createStatusItem()
-        updateChecker.checkOnSchedule()
+        // Sparkle handles update polling now. JorvikUpdateChecker instance
+        // remains because JorvikSettingsView.showWindow still requires one
+        // as a parameter, pending JorvikKit retirement (§11.5).
+        _ = sparkleUpdater  // forces lazy init so Sparkle starts at launch
+        // updateChecker.checkOnSchedule()  // disabled — Sparkle owns this now
 
         // Immediate response to known events
         NotificationCenter.default.addObserver(
@@ -469,10 +480,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             appName: "RainbowApple",
             aboutAction: #selector(openAbout),
             settingsAction: #selector(openSettings),
-            target: self
+            target: self,
+            actions: [
+                JorvikMenuBuilder.ActionItem(
+                    title: "Check for Updates\u{2026}",
+                    action: #selector(checkForUpdates(_:)),
+                    target: self
+                )
+            ]
         )
 
         applyPill()
+    }
+
+    @objc func checkForUpdates(_ sender: Any?) {
+        sparkleUpdater.checkForUpdates(sender)
+    }
+}
+
+/// LSUIElement apps don't auto-activate when they present windows, so
+/// Sparkle's update dialogs would appear behind whatever app is currently
+/// key. This brings RainbowApple frontmost just before each modal.
+final class RainbowAppleUserDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
+    func standardUserDriverWillShowModalAlert() {
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
 

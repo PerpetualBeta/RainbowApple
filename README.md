@@ -46,7 +46,8 @@ Right-click the small Apple icon in the menu bar and choose **Settings…** to c
 - **Accessibility** — permission status with grant button
 - **Menu bar icon pill** — optional grey background for stronger contrast on busy or wallpaper-tinted menu bars (off by default)
 - **Launch at Login** — start RainbowApple automatically when you log in
-- **Auto-update** — check for new versions on a configurable schedule with optional automatic installation
+
+Auto-updates are handled by Sparkle. Use the **Check for Updates…** entry in the right-click menu to check on demand; Sparkle's prompt offers an "Automatically download and install updates in the future" checkbox the first time an update is available.
 
 ## Quitting
 
