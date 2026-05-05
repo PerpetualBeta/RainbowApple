@@ -494,16 +494,63 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func checkForUpdates(_ sender: Any?) {
+        NSRunningApplication.current.activate(options: [.activateAllWindows])
         sparkleUpdater.checkForUpdates(sender)
     }
 }
 
-/// LSUIElement apps don't auto-activate when they present windows, so
-/// Sparkle's update dialogs would appear behind whatever app is currently
-/// key. This brings RainbowApple frontmost just before each modal.
+/// Keeps Sparkle's update UI visible across the whole session, including
+/// when the user switches to another app mid-download. See KB:
+/// `conventions/sparkle-integration.md` §6 for the rationale.
 final class RainbowAppleUserDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
+    private var sessionObserver: NSObjectProtocol?
+    private var elevatedWindows: [(window: NSWindow, originalLevel: NSWindow.Level)] = []
+
     func standardUserDriverWillShowModalAlert() {
-        NSApp.activate(ignoringOtherApps: true)
+        bringForward()
+    }
+
+    func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
+        startFocusGuard()
+        bringForward()
+    }
+
+    func standardUserDriverWillFinishUpdateSession() {
+        stopFocusGuard()
+    }
+
+    private func bringForward() {
+        NSRunningApplication.current.activate(options: [.activateAllWindows])
+        elevateAllWindows()
+    }
+
+    private func startFocusGuard() {
+        guard sessionObserver == nil else { return }
+        sessionObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.bringForward()
+        }
+    }
+
+    private func stopFocusGuard() {
+        if let obs = sessionObserver {
+            NotificationCenter.default.removeObserver(obs)
+            sessionObserver = nil
+        }
+        for entry in elevatedWindows {
+            entry.window.level = entry.originalLevel
+        }
+        elevatedWindows.removeAll()
+    }
+
+    private func elevateAllWindows() {
+        for window in NSApp.windows where window.isVisible && window.level == .normal {
+            elevatedWindows.append((window, window.level))
+            window.level = .floating
+        }
     }
 }
 
