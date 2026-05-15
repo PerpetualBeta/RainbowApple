@@ -205,7 +205,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var positionSource: DispatchSourceTimer?
     var lastAXFrame: NSRect?
     var missionControlActive = false
-    let updateChecker = JorvikUpdateChecker(repoName: "RainbowApple")
     let sparkleUserDriverDelegate = RainbowAppleUserDriverDelegate()
     lazy var sparkleUpdater = SPUStandardUpdaterController(
         startingUpdater: true,
@@ -223,11 +222,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         createOverlayWindow()
         positionOverlay()
         createStatusItem()
-        // Sparkle handles update polling now. JorvikUpdateChecker instance
-        // remains because JorvikSettingsView.showWindow still requires one
-        // as a parameter, pending JorvikKit retirement (§11.5).
         _ = sparkleUpdater  // forces lazy init so Sparkle starts at launch
-        // updateChecker.checkOnSchedule()  // disabled — Sparkle owns this now
 
         // Immediate response to known events
         NotificationCenter.default.addObserver(
@@ -465,10 +460,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func openSettings() {
-        JorvikSettingsView.showWindow(
-            appName: "RainbowApple",
-            updateChecker: updateChecker
-        ) { [weak self] in
+        JorvikSettingsView.showWindow(appName: "RainbowApple") { [weak self] in
             RainbowAppleSettingsContent(onPillChanged: { self?.applyPill() })
         }
     }
