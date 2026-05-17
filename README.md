@@ -2,6 +2,8 @@
 
 A tiny macOS utility that replaces the grey Apple logo in the menu bar with the classic six-colour rainbow Apple logo from 1977.
 
+![RainbowApple in the menu bar](Screenshots/RainbowApple.png)
+
 ## Requirements
 
 - macOS 14 (Sonoma) or later
