@@ -57,29 +57,24 @@ Right-click the small Apple icon in the menu bar (the status bar item) and choos
 
 ## Building from Source
 
-RainbowApple is a single-file Swift app. No Xcode project is required.
+The build pipeline is driven by the shared [`release.mk`](https://github.com/PerpetualBeta/jorvik-release) Make include — a sibling checkout of the `jorvik-release` repo at `../jorvik-release/` is required. The project Makefile is ~15 lines: it declares identity and `include`s the shared recipe.
 
 ```bash
-cd ~/Desktop/RainbowApple
-./build.sh
-open RainbowApple.app
+brew install make   # GNU Make 4+ if you don't already have gmake
+cd ~/Desktop/Jorvik\ Software/RainbowApple
+gmake build         # compile-only sanity check (swiftc)
+gmake release VERSION=1.0.0 BUILD_NUMBER=$(date +%Y%m%d%H%M%S)   # full signed/notarised pipeline
 ```
 
-The build script compiles `main.swift` with `swiftc`, links against Cocoa, and assembles the `.app` bundle with the app icon.
+Without `SIGN_ID` / `INSTALLER_SIGN_ID` / `NOTARY_PROFILE`, `release.mk` falls back to ad-hoc signing and skips notarisation — fine for parse-checking the recipe, not for shipping. The full variable contract is documented in [`PerpetualBeta/jorvik-release`](https://github.com/PerpetualBeta/jorvik-release).
 
 ## Alignment
 
-RainbowApple now auto-scales to the current menu bar height, so alignment should be correct on every display out of the box — external monitors, Studio Display, non-notched MacBooks, and notched MacBook Pros alike. The overlay re-aligns automatically when you plug or unplug a display, change resolution, or move the app between screens.
+Positioning is deterministic. RainbowApple asks macOS's Accessibility API for the exact frame of the system Apple menu bar item and places the overlay directly on top — no measurement, no tuning, no fudge factors. The position re-syncs automatically when you plug or unplug a display, change resolution, switch Spaces, or move between bars of different heights (the notched MacBook Pro's 24pt bar versus the standard 22pt bar on external displays).
 
-If you notice a misalignment on an unusual display configuration, the reference constants live at the top of `positionOverlay()` in `main.swift`:
+Granting Accessibility once is all that's required — the **Grant** button in Settings opens the right pane in System Settings. There's nothing to tune in source.
 
-| Constant | Default | Role |
-|---|---|---|
-| Reference bar height | `22.0` | Point size the other constants were tuned against |
-| Apple centre X | `28.5` | Horizontal centre of the system Apple logo on a 22pt bar |
-| Vertical nudge | `1.5` | Fine-tune offset relative to menu bar geometric centre |
-
-The live scale factor is `menuBarHeight / 22.0`, and every position is computed from there. Adjusting the reference values is rarely needed — report the mismatch instead.
+If Accessibility is denied or revoked, RainbowApple falls back to a mathematical estimate based on the screen's menu-bar height. It's close on most setups, but only the Accessibility-driven path is pixel-perfect across every display configuration.
 
 ---
 
