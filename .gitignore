@@ -4,7 +4,6 @@
 *.saver
 .build/
 build/
-_BuildOutput/
 _DebugBuild/
 _CodeSignature/
 *.o
