@@ -59,9 +59,13 @@ enum JorvikMenuBarPill {
 
         let hPad: CGFloat = 6
         let vPad: CGFloat = 2
+        // Cap height to the menu bar's drawable region so the pill can't be clipped
+        // top/bottom when the bar's effective thickness shrinks after a display
+        // reconfiguration (e.g. moving from a notched display to an external one).
+        let maxHeight = NSStatusBar.system.thickness - 2
         let size = NSSize(
-            width:  max(22, glyphSize.width  + hPad * 2),
-            height:       glyphSize.height + vPad * 2
+            width:  max(22, glyphSize.width + hPad * 2),
+            height: min(glyphSize.height + vPad * 2, maxHeight)
         )
 
         let image = NSImage(size: size, flipped: false) { rect in
