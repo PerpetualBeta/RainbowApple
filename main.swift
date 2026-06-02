@@ -231,6 +231,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
+        // Also redraw the status-item pill on display changes — the menu bar's
+        // effective thickness can shrink (e.g. moving from a notched display
+        // to an external one) and leave the pre-rendered pill cropped.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.applyPill()
+        }
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
             selector: #selector(repositionOverlay),
