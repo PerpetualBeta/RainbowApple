@@ -3,6 +3,7 @@ import ApplicationServices
 
 /// App-specific settings sections shown inside JorvikSettingsView:
 ///  - Permissions (Accessibility status + grant button)
+///  - Menu Bar (show/hide the status item; relaunch restores it)
 ///  - Menu Bar Icon (JorvikKit's standard pill settings)
 ///
 /// Launch at Login and Updates sections are provided by JorvikSettingsView
@@ -28,6 +29,8 @@ struct RainbowAppleSettingsContent: View {
                 }
             }
         }
+
+        MenuBarVisibilitySettings()
 
         MenuBarPillSettings(onChanged: onPillChanged)
     }

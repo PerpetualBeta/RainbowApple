@@ -253,6 +253,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
+        // Add/remove the status-bar item when the user toggles its visibility
+        // in Settings. The rainbow overlay is unaffected — this only governs
+        // the right-side apple.logo item that opens the menu.
+        NotificationCenter.default.addObserver(
+            forName: JorvikStatusItemVisibility.didChangeNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.applyStatusItemVisibility()
+        }
+
         // GCD timer fires independently of the main run loop's mode,
         // so it isn't stalled by space-transition animations the way
         // NSTimer is. Dispatches to main for the actual UI work.
@@ -288,7 +298,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applyPill() {
-        statusItem.button?.image = JorvikMenuBarPill.icon(
+        statusItem?.button?.image = JorvikMenuBarPill.icon(
             symbolName: "apple.logo",
             accessibilityDescription: "RainbowApple"
         )
@@ -475,6 +485,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func createStatusItem() {
+        // Honour the user's "Show icon in menu bar" choice. When hidden, the
+        // rainbow overlay still runs; only this right-side item is suppressed,
+        // and relaunching the app from /Applications brings it back.
+        guard JorvikStatusItemVisibility.isVisible else { return }
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
         statusItem.menu = JorvikMenuBuilder.buildMenu(
@@ -497,6 +512,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func checkForUpdates(_ sender: Any?) {
         NSRunningApplication.current.activate(options: [.activateAllWindows])
         sparkleUpdater.checkForUpdates(sender)
+    }
+
+    /// Create or tear down the status-bar item to match the persisted
+    /// visibility flag. Driven by the Settings toggle and by relaunch.
+    func applyStatusItemVisibility() {
+        if JorvikStatusItemVisibility.isVisible {
+            if statusItem == nil { createStatusItem() }
+        } else if let item = statusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
+        }
+    }
+
+    /// Relaunching from /Applications is the way back to a hidden icon. A
+    /// single-instance LSUIElement app routes the second launch here as a
+    /// reopen rather than spawning a new process.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        JorvikStatusItemVisibility.handleReopen()
+        return true
     }
 }
 
