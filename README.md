@@ -46,14 +46,17 @@ The overlay is click-through — clicking the Apple logo still opens the Apple m
 Right-click the small Apple icon in the menu bar and choose **Settings…** to configure:
 
 - **Accessibility** — permission status with grant button
+- **Show icon in menu bar** — hide the small Apple status icon (the one that opens this menu) while keeping the rainbow logo. Your choice persists across launches, including login auto-start. *Shown only on macOS 14–15; on macOS 26 (Tahoe) and later, use System Settings → Menu Bar, which provides this natively.*
 - **Menu bar icon pill** — optional grey background for stronger contrast on busy or wallpaper-tinted menu bars (off by default)
 - **Launch at Login** — start RainbowApple automatically when you log in
+
+If you've hidden the status icon and want it back, simply re-open RainbowApple from your Applications folder — it reappears immediately.
 
 Auto-updates are handled by Sparkle. Use the **Check for Updates…** entry in the right-click menu to check on demand; Sparkle's prompt offers an "Automatically download and install updates in the future" checkbox the first time an update is available.
 
 ## Quitting
 
-Right-click the small Apple icon in the menu bar (the status bar item) and choose **Quit RainbowApple**.
+Right-click the small Apple icon in the menu bar (the status bar item) and choose **Quit RainbowApple**. If you've hidden that icon, re-open RainbowApple from your Applications folder first to bring it back, then quit from the menu.
 
 ## Building from Source
 
