@@ -491,6 +491,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard JorvikStatusItemVisibility.isVisible else { return }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        // Persist the item's menu-bar slot across launches (and let a user ⌘-drag stick).
+        statusItem.autosaveName = "RainbowAppleStatusItem"
 
         statusItem.menu = JorvikMenuBuilder.buildMenu(
             appName: "RainbowApple",
