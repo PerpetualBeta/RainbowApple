@@ -342,25 +342,43 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Query the Accessibility API for the exact frame of the Apple menu bar item.
     /// Returns the frame in AppKit screen coordinates (bottom-left origin), or nil
-    /// if Accessibility is unavailable.
+    /// if Accessibility is unavailable or every candidate reports an unusable frame.
     func queryAppleMenuFrame() -> NSRect? {
         guard AXIsProcessTrusted() else { return nil }
 
-        // Try the frontmost app first; fall back to Finder (always running)
-        // if no app has focus — e.g. after a synthetic space switch.
+        // Ask the app that actually OWNS the drawn menu bar, not merely the one with
+        // focus. An agent app (LSUIElement) never draws a menu bar, yet AppKit still
+        // gives it a main menu — so its AX menu bar exists and reports the Apple item
+        // at a phantom 0×0 frame. Trusting the frontmost app therefore collapsed the
+        // overlay to nothing whenever an agent app with a focusable window took focus
+        // (Ballast's visualiser being the obvious one). menuBarOwningApplication stays
+        // on the real owner through exactly that transition.
+        var candidates: [pid_t] = []
+        if let owner = NSWorkspace.shared.menuBarOwningApplication {
+            candidates.append(owner.processIdentifier)
+        }
+        if let front = NSWorkspace.shared.frontmostApplication, front.activationPolicy == .regular {
+            candidates.append(front.processIdentifier)
+        }
+        // Finder is always running, and owns the bar when nothing else does —
+        // e.g. after a synthetic space switch leaves no app with focus.
+        if let finder = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == "com.apple.finder" }) {
+            candidates.append(finder.processIdentifier)
+        }
+
+        for pid in candidates {
+            if let frame = appleMenuFrame(ofProcess: pid), isOnMenuBar(frame) { return frame }
+        }
+        return nil
+    }
+
+    /// The Apple menu item's frame as one app's AX menu bar reports it, converted to
+    /// AppKit coordinates. Unvalidated — callers must run it past `isOnMenuBar`.
+    private func appleMenuFrame(ofProcess pid: pid_t) -> NSRect? {
         var menuBarRef: AnyObject?
-        if let frontApp = NSWorkspace.shared.frontmostApplication {
-            let el = AXUIElementCreateApplication(frontApp.processIdentifier)
-            AXUIElementCopyAttributeValue(el, kAXMenuBarAttribute as CFString, &menuBarRef)
-        }
-        if menuBarRef == nil {
-            let finder = NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == "com.apple.finder" }
-            if let pid = finder?.processIdentifier {
-                let el = AXUIElementCreateApplication(pid)
-                AXUIElementCopyAttributeValue(el, kAXMenuBarAttribute as CFString, &menuBarRef)
-            }
-        }
-        guard let menuBar = menuBarRef else { return nil }
+        let app = AXUIElementCreateApplication(pid)
+        guard AXUIElementCopyAttributeValue(app, kAXMenuBarAttribute as CFString, &menuBarRef) == .success,
+              let menuBar = menuBarRef else { return nil }
 
         var childrenRef: AnyObject?
         guard AXUIElementCopyAttributeValue(menuBar as! AXUIElement, kAXChildrenAttribute as CFString, &childrenRef) == .success else { return nil }
@@ -383,6 +401,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let nsY = primaryScreen.frame.height - point.y - size.height
 
         return NSRect(x: point.x, y: nsY, width: size.width, height: size.height)
+    }
+
+    /// True when a candidate frame genuinely lands in the menu bar. The strip's
+    /// thickness is read off each screen (frame minus visibleFrame), never assumed:
+    /// it is 22pt on an external bar, 24pt on a notched panel, 31pt on macOS 26,
+    /// and NSStatusBar.thickness disagrees with all of it.
+    private func isOnMenuBar(_ frame: NSRect) -> Bool {
+        guard !frame.isEmpty else { return false }
+
+        let strips = NSScreen.screens.compactMap { screen -> NSRect? in
+            let thickness = screen.frame.maxY - screen.visibleFrame.maxY
+            guard thickness > 0 else { return nil }   // this screen isn't drawing a bar
+            return NSRect(x: screen.frame.minX, y: screen.frame.maxY - thickness,
+                          width: screen.frame.width, height: thickness)
+        }
+
+        // No screen reports a strip at all: the bar is set to auto-hide and is hidden
+        // right now, so there is no thickness to measure. Fall back to the one thing
+        // still true of a real Apple item — its top edge is flush with a screen's top.
+        guard !strips.isEmpty else {
+            return NSScreen.screens.contains { abs($0.frame.maxY - frame.maxY) < frame.height }
+        }
+
+        return strips.contains { $0.intersects(frame) }
     }
 
     func positionOverlay() {
