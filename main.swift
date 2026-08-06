@@ -44,14 +44,57 @@ class RainbowAppleView: NSView {
         return glyphPath.copy(using: &transform)
     }
 
+    /// Split the glyph into the apple body (bite included) and the leaf. The 1977
+    /// logo treats the two differently, so they can't be striped as one shape —
+    /// see `draw(_:)`. Returns the whole path as the body if there's no separate
+    /// leaf contour to find.
+    static func split(_ path: CGPath) -> (body: CGPath, leaf: CGPath?) {
+        var contours: [CGMutablePath] = []
+        path.applyWithBlock { element in
+            let e = element.pointee
+            switch e.type {
+            case .moveToPoint:
+                let contour = CGMutablePath()
+                contour.move(to: e.points[0])
+                contours.append(contour)
+            case .addLineToPoint:
+                contours.last?.addLine(to: e.points[0])
+            case .addQuadCurveToPoint:
+                contours.last?.addQuadCurve(to: e.points[1], control: e.points[0])
+            case .addCurveToPoint:
+                contours.last?.addCurve(to: e.points[2], control1: e.points[0], control2: e.points[1])
+            case .closeSubpath:
+                contours.last?.closeSubpath()
+            @unknown default:
+                break
+            }
+        }
+
+        let largest = contours.max { a, b in
+            let (x, y) = (a.boundingBox, b.boundingBox)
+            return x.width * x.height < y.width * y.height
+        }
+        guard contours.count > 1, let main = largest else { return (path, nil) }
+
+        let body = CGMutablePath()
+        let leaf = CGMutablePath()
+        for contour in contours {
+            // A contour rising above the apple itself is the leaf. Anything else —
+            // the bite, if the font ever expresses it as its own contour — is body.
+            if contour !== main, contour.boundingBox.maxY > main.boundingBox.maxY {
+                leaf.addPath(contour)
+            } else {
+                body.addPath(contour)
+            }
+        }
+        return (body, leaf.isEmpty ? nil : leaf)
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         guard let centredPath = Self.applePath(in: bounds, fontSize: fontSize, scale: Self.rainbowScale) else { return }
-        let pathBounds = centredPath.boundingBox
-
-        context.saveGState()
-        context.addPath(centredPath)
-        context.clip()
+        let (body, leaf) = Self.split(centredPath)
+        let bodyBounds = body.boundingBox
 
         // Original Apple rainbow logo — 6 solid horizontal stripes drawn as rectangles
         let stripeColors: [(CGFloat, CGFloat, CGFloat)] = [
@@ -63,15 +106,39 @@ class RainbowAppleView: NSView {
             (0x00/255.0, 0x9D/255.0, 0xDC/255.0),  // Blue   #009DDC
         ]
 
-        let stripeHeight = pathBounds.height / CGFloat(stripeColors.count)
+        // Each band is a sixth of the APPLE's height, not a sixth of the glyph's
+        // overall bounding box. Measured off the 1977 original: body 116px tall in
+        // six 19.33px bands, leaf solid green. Striping the combined body+leaf box
+        // instead spends the whole green band on the leaf, leaves the leaf's own tip
+        // yellow, and shifts every boundary up — the apple's shoulder comes out
+        // yellow and only five colours land on the fruit.
+        context.saveGState()
+        context.addPath(body)
+        context.clip()
+        let stripeHeight = bodyBounds.height / CGFloat(stripeColors.count)
         for (i, color) in stripeColors.enumerated() {
-            let y = pathBounds.maxY - stripeHeight * CGFloat(i + 1)
-            let rect = CGRect(x: pathBounds.minX, y: y, width: pathBounds.width, height: stripeHeight)
+            // Paint each band from its own top edge all the way down, top colour
+            // first, so later bands overwrite earlier ones. Abutting rectangles
+            // would meet on a fractional pixel and leave a hairline seam; with
+            // this the only edges are inside already-painted area.
+            let top = bodyBounds.maxY - stripeHeight * CGFloat(i)
+            let rect = CGRect(x: bodyBounds.minX, y: bodyBounds.minY,
+                              width: bodyBounds.width, height: top - bodyBounds.minY)
             context.setFillColor(red: color.0, green: color.1, blue: color.2, alpha: 1.0)
             context.fill(rect)
         }
-
         context.restoreGState()
+
+        // The leaf carries the top band's green in full — it is never two-tone.
+        if let leaf {
+            context.saveGState()
+            context.addPath(leaf)
+            context.clip()
+            let green = stripeColors[0]
+            context.setFillColor(red: green.0, green: green.1, blue: green.2, alpha: 1.0)
+            context.fill(leaf.boundingBox)
+            context.restoreGState()
+        }
     }
 }
 

@@ -31,6 +31,8 @@ RainbowApple places a small transparent window precisely over the system Apple l
 | 5 | Purple | #963D97 |
 | 6 (bottom) | Blue | #009DDC |
 
+Each band is exactly a sixth of the apple's own height, and the leaf carries the top band's green in full — the arrangement of the 1977 original. The leaf sits above the fruit, so measuring the bands across the whole glyph instead would spend the entire green band on the leaf and leave the apple's shoulder yellow.
+
 The overlay is click-through — clicking the Apple logo still opens the Apple menu as normal.
 
 ## Features
@@ -38,7 +40,7 @@ The overlay is click-through — clicking the Apple logo still opens the Apple m
 - Appears on all Spaces (follows you as you switch)
 - Click-through — does not interfere with the Apple menu
 - No dock icon
-- Auto-aligns to the system Apple logo on any display — including notched MacBook Pros, whose 24pt menu bars differ from the standard 22pt bar used on external displays and non-notched Macs
+- Auto-aligns to the system Apple logo on any display, whatever height its menu bar happens to be — notched MacBook Pros and external monitors included
 - Minimal resource usage
 
 ## Settings
@@ -73,7 +75,9 @@ Without `SIGN_ID` / `INSTALLER_SIGN_ID` / `NOTARY_PROFILE`, `release.mk` falls b
 
 ## Alignment
 
-Positioning is deterministic. RainbowApple asks macOS's Accessibility API for the exact frame of the system Apple menu bar item and places the overlay directly on top — no measurement, no tuning, no fudge factors. The position re-syncs automatically when you plug or unplug a display, change resolution, switch Spaces, or move between bars of different heights (the notched MacBook Pro's 24pt bar versus the standard 22pt bar on external displays).
+Positioning is deterministic. RainbowApple asks macOS's Accessibility API for the exact frame of the system Apple menu bar item and places the overlay directly on top — no measurement, no tuning, no fudge factors. The position re-syncs automatically when you plug or unplug a display, change resolution, switch Spaces, or move between bars of different heights. No thickness is ever assumed: notched panels, external monitors, and macOS's own changes of mind about how tall a menu bar should be are all read at runtime.
+
+The frame is read from whichever app *owns* the menu bar at that moment, which isn't always the frontmost one. A background agent app — a menu-bar utility with no menu of its own — can take focus without ever drawing a menu bar, and asking it returns a phantom zero-sized frame. Every candidate frame is checked against the screen's real menu bar before the overlay is allowed to move, so a focus change can't make the rainbow vanish.
 
 Granting Accessibility once is all that's required — the **Grant** button in Settings opens the right pane in System Settings. There's nothing to tune in source.
 
