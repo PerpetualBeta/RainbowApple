@@ -15,6 +15,12 @@ Two formats on every release — both signed and notarised, pick whichever suits
 - **[Installer (`.pkg`)](https://github.com/PerpetualBeta/RainbowApple/releases/latest/download/RainbowApple.pkg)** — recommended for first-time installs. Double-click to run; macOS Installer places the app in `/Applications` without quarantine or App Translocation.
 - **[Download (`.zip`)](https://github.com/PerpetualBeta/RainbowApple/releases/latest)** — unzip and drag `RainbowApple.app` to your Applications folder.
 
+Or install it with [Homebrew](https://brew.sh):
+
+```sh
+brew install --cask perpetualbeta/jorvik/rainbowapple
+```
+
 After installation, launch RainbowApple — the rainbow Apple logo appears over the system Apple icon in the menu bar.
 
 
