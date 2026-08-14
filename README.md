@@ -23,7 +23,6 @@ brew install --cask perpetualbeta/jorvik/rainbowapple
 
 After installation, launch RainbowApple — the rainbow Apple logo appears over the system Apple icon in the menu bar.
 
-
 ## How It Works
 
 RainbowApple places a small transparent window precisely over the system Apple logo in the top-left corner of the menu bar. The window renders the Apple logo glyph filled with the original six-colour rainbow stripes:
@@ -71,8 +70,10 @@ Right-click the small Apple icon in the menu bar (the status bar item) and choos
 The build pipeline is driven by the shared [`release.mk`](https://github.com/PerpetualBeta/jorvik-release) Make include — a sibling checkout of the `jorvik-release` repo at `../jorvik-release/` is required. The project Makefile is ~15 lines: it declares identity and `include`s the shared recipe.
 
 ```bash
-brew install make   # GNU Make 4+ if you don't already have gmake
-cd ~/Desktop/Jorvik\ Software/RainbowApple
+brew install make   # GNU Make 4+, if you do not already have gmake
+git clone https://github.com/PerpetualBeta/jorvik-release.git
+git clone https://github.com/PerpetualBeta/RainbowApple.git
+cd RainbowApple
 gmake build         # compile-only sanity check (swiftc)
 gmake release VERSION=1.0.0 BUILD_NUMBER=$(date +%Y%m%d%H%M%S)   # full signed/notarised pipeline
 ```
