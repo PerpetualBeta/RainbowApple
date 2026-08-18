@@ -272,6 +272,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var positionSource: DispatchSourceTimer?
     var lastAXFrame: NSRect?
     var missionControlActive = false
+    /// When the pointer was last near a screen's top edge (timer queue only).
+    private var pointerLastNearTop = Date.distantPast
+
+    /// The hide animation begins a beat AFTER the pointer leaves the bar —
+    /// observed on Tahoe as a few hundred ms between the pointer departing
+    /// and the bar starting to retract. Keep the animation-rate cadence
+    /// that long after the pointer was last near a top edge, so the
+    /// ride-out is caught at 16ms rather than on a 100ms tick.
+    static let hideGracePeriod: TimeInterval = 1.5
+
+    /// Within two bar-heights of a screen's top edge — inside the bar
+    /// itself, or crossing its boundary in either direction.
+    static let topProximityBand: CGFloat = 64
+
+    /// True when the pointer is near the top edge of any screen (CG
+    /// coordinates: y grows downward from the primary display's top).
+    static func pointerNearScreenTop() -> Bool {
+        guard let loc = CGEvent(source: nil)?.location,
+              let primary = NSScreen.screens.first else { return false }
+        return NSScreen.screens.contains { screen in
+            let topCG = primary.frame.height - screen.frame.maxY
+            return loc.x >= screen.frame.minX && loc.x <= screen.frame.maxX
+                && loc.y >= topCG && loc.y <= topCG + topProximityBand
+        }
+    }
     let sparkleUserDriverDelegate = RainbowAppleUserDriverDelegate()
     lazy var sparkleUpdater = SPUStandardUpdaterController(
         startingUpdater: true,
@@ -344,13 +369,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let barRects = Self.menuBarWindowRects(in: windows)
 
             // Tick at animation cadence while the bar is sliding, and while
-            // the pointer sits at the top edge with the bar hidden (a reveal
-            // is imminent), so the overlay rides the slide instead of popping
-            // in on the next 100ms tick. Idle cost stays at 100ms.
+            // the pointer is near a top edge or was within the grace period
+            // — the window in which a reveal or hide can begin — so the
+            // overlay rides both slides instead of popping on a 100ms tick.
+            // Idle cost stays at 100ms.
             let sliding = barRects.contains { Self.rise(of: $0) > 0.5 }
-            let revealImminent = barRects.isEmpty
-                && (CGEvent(source: nil)?.location.y ?? .greatestFiniteMagnitude) <= 2
-            let interval: DispatchTimeInterval = (sliding || revealImminent)
+            let nearTop = Self.pointerNearScreenTop()
+            if nearTop { self.pointerLastNearTop = Date() }
+            let withinGrace = Date().timeIntervalSince(self.pointerLastNearTop) < Self.hideGracePeriod
+            let interval: DispatchTimeInterval = (sliding || nearTop || withinGrace)
                 ? .milliseconds(16) : .milliseconds(100)
             self.positionSource?.schedule(deadline: .now() + interval, repeating: interval)
 
