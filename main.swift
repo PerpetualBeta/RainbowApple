@@ -604,7 +604,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let scale = barRect.height / 22.0
         let overlaySide: CGFloat = 20 * scale
-        let appleCentreX: CGFloat = 28.5 * scale
+        // The Apple item's x-centre does NOT scale with bar height: measured
+        // ≈28.5 on a 22pt external bar and ≈27 (AX: item x=10 w=34) on a 33pt
+        // notched bar. Scaling it put the fallback overlay ~15pt right of the
+        // real apple on notched panels. Only the vertical metrics scale.
+        let appleCentreX: CGFloat = 28.5
         let verticalNudge: CGFloat = 1.5 * scale
 
         let x = barRect.minX + appleCentreX - overlaySide / 2
