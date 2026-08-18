@@ -287,7 +287,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         AXIsProcessTrustedWithOptions(opts)
 
         createOverlayWindow()
-        positionOverlay()
+        repositionOverlay()
         createStatusItem()
         _ = sparkleUpdater  // forces lazy init so Sparkle starts at launch
 
@@ -332,21 +332,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // GCD timer fires independently of the main run loop's mode,
         // so it isn't stalled by space-transition animations the way
-        // NSTimer is. Dispatches to main for the actual UI work.
+        // NSTimer is. Dispatches to main for the actual UI work. One
+        // window-list copy per tick feeds both the Mission Control check
+        // and the menu-bar-visibility check.
         let source = DispatchSource.makeTimerSource(queue: .global(qos: .userInteractive))
         source.schedule(deadline: .now(), repeating: .milliseconds(100))
         source.setEventHandler { [weak self] in
             guard let self else { return }
-            let mc = Self.isMissionControlActive()
+            let windows = Self.onScreenWindows()
+            let mc = Self.isMissionControlActive(in: windows)
+            let barRects = Self.menuBarWindowRects(in: windows)
             DispatchQueue.main.async {
                 if mc && !self.missionControlActive {
                     self.missionControlActive = true
                     self.overlayWindow.orderOut(nil)
                 } else if !mc && self.missionControlActive {
                     self.missionControlActive = false
-                    self.positionOverlay()
+                    self.positionOverlay(barRects: barRects)
                 } else if !mc {
-                    self.positionOverlay()
+                    self.positionOverlay(barRects: barRects)
                 }
             }
         }
@@ -399,8 +403,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         rainbow.autoresizingMask = [.width, .height]
         backdrop.addSubview(rainbow)
 
+        // Not ordered front here — positionOverlay() shows it once there is a
+        // sane frame to show it at. Ordering front at the creation rect put a
+        // 20×20 window in the bottom-left corner whenever no position could
+        // be determined (issue #2: launch while an auto-hidden bar is hidden).
         window.contentView = backdrop
-        window.orderFrontRegardless()
 
         overlayWindow = window
     }
@@ -494,8 +501,53 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return strips.contains { $0.intersects(frame) }
     }
 
-    func positionOverlay() {
+    /// One snapshot of the on-screen window list, shared by the Mission
+    /// Control and menu-bar-visibility checks so each tick pays for it once.
+    static func onScreenWindows() -> [[String: Any]] {
+        CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+    }
+
+    /// The menu bar's backing windows (one per screen drawing a bar), in
+    /// AppKit coordinates. With "Automatically hide and show the menu bar"
+    /// enabled, the window server removes them from the on-screen list while
+    /// the bar is hidden — their presence is the one visibility signal that
+    /// holds across every combination of setting and reveal state, and their
+    /// bounds are the bar's true rect even when auto-hide makes the
+    /// visibleFrame arithmetic read zero thickness. Matched by level and
+    /// geometry only: window NAMES are empty without Screen Recording
+    /// permission, and owner names localise ("Control Centre").
+    static func menuBarWindowRects(in windows: [[String: Any]]) -> [NSRect] {
+        guard let primary = NSScreen.screens.first else { return [] }
+        let menuLevel = Int(CGWindowLevelForKey(.mainMenuWindow))
+        return windows.compactMap { w in
+            guard (w["kCGWindowLayer"] as? Int) == menuLevel,
+                  let boundsDict = w["kCGWindowBounds"] as? NSDictionary,
+                  let cg = CGRect(dictionaryRepresentation: boundsDict) else { return nil }
+            // CG coordinates: origin at top-left of the primary display,
+            // Y increasing downward. Convert to AppKit (bottom-left origin).
+            let rect = NSRect(x: cg.origin.x,
+                              y: primary.frame.height - cg.origin.y - cg.height,
+                              width: cg.width, height: cg.height)
+            // A menu bar is flush with a screen's top and at least half as
+            // wide as that screen — nothing else lives at this window level.
+            let isBar = NSScreen.screens.contains { screen in
+                abs(rect.maxY - screen.frame.maxY) < 1
+                    && rect.width >= screen.frame.width * 0.5
+            }
+            return isBar ? rect : nil
+        }
+    }
+
+    func positionOverlay(barRects: [NSRect]) {
         guard !missionControlActive else { return }
+
+        // An overlay for a hidden bar must hide with it. Covers launching
+        // while an auto-hidden bar is off screen, the hide after a hover
+        // reveal (issue #2's "sticky" rainbow), and full-screen spaces.
+        guard !barRects.isEmpty else {
+            overlayWindow.orderOut(nil)
+            return
+        }
 
         let frame: NSRect
         if let axFrame = queryAppleMenuFrame() {
@@ -504,8 +556,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else if let cached = lastAXFrame {
             frame = cached
         } else {
-            positionOverlayMathematical()
-            overlayWindow.orderFrontRegardless()
+            // No AX frame and nothing cached: place mathematically off the
+            // bar's measured rect, or stay hidden — a window with no sane
+            // position must never be shown at whatever frame it happens to
+            // already have.
+            if positionOverlayMathematical(barRects: barRects) {
+                overlayWindow.orderFrontRegardless()
+            } else {
+                overlayWindow.orderOut(nil)
+            }
             return
         }
 
@@ -528,20 +587,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         overlayWindow.orderFrontRegardless()
     }
 
-    func positionOverlayMathematical() {
-        guard let screen = NSScreen.main else { return }
-        let screenFrame = screen.frame
-        let menuBarHeight = screen.frame.height - screen.visibleFrame.height - screen.visibleFrame.origin.y
-        guard menuBarHeight > 0 else { return }
+    /// Position off the bar's measured rect — the rect that exists even when
+    /// auto-hide zeroes the frame-minus-visibleFrame thickness. Prefers the
+    /// bar on the screen with keyboard focus. Returns false when no bar rect
+    /// is available to position against.
+    @discardableResult
+    func positionOverlayMathematical(barRects: [NSRect]) -> Bool {
+        let barRect: NSRect
+        if let main = NSScreen.main, let onMain = barRects.first(where: { main.frame.intersects($0) }) {
+            barRect = onMain
+        } else if let first = barRects.first {
+            barRect = first
+        } else {
+            return false
+        }
 
-        let scale = menuBarHeight / 22.0
+        let scale = barRect.height / 22.0
         let overlaySide: CGFloat = 20 * scale
         let appleCentreX: CGFloat = 28.5 * scale
         let verticalNudge: CGFloat = 1.5 * scale
 
-        let x = screenFrame.origin.x + appleCentreX - overlaySide / 2
-        let y = screenFrame.origin.y + screenFrame.height - menuBarHeight
-              + (menuBarHeight - overlaySide) / 2 + verticalNudge
+        let x = barRect.minX + appleCentreX - overlaySide / 2
+        let y = barRect.minY + (barRect.height - overlaySide) / 2 + verticalNudge
 
         overlayWindow.setFrame(
             NSRect(x: x, y: y, width: overlaySide, height: overlaySide),
@@ -554,6 +621,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             view.needsDisplay = true
             backdropView?.fontSize = size
         }
+        return true
     }
 
     /// The RainbowAppleView inside the visual-effect backdrop.
@@ -567,14 +635,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func repositionOverlay() {
-        positionOverlay()
+        positionOverlay(barRects: Self.menuBarWindowRects(in: Self.onScreenWindows()))
     }
 
     /// Detect Mission Control by checking for Dock-owned windows at layer 18,
     /// which only appear while Mission Control is open.
-    private static func isMissionControlActive() -> Bool {
-        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else { return false }
-        return list.contains { w in
+    private static func isMissionControlActive(in windows: [[String: Any]]) -> Bool {
+        windows.contains { w in
             (w["kCGWindowOwnerName"] as? String) == "Dock" && (w["kCGWindowLayer"] as? Int) == 18
         }
     }
