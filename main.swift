@@ -342,6 +342,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let windows = Self.onScreenWindows()
             let mc = Self.isMissionControlActive(in: windows)
             let barRects = Self.menuBarWindowRects(in: windows)
+
+            // Tick at animation cadence while the bar is sliding, and while
+            // the pointer sits at the top edge with the bar hidden (a reveal
+            // is imminent), so the overlay rides the slide instead of popping
+            // in on the next 100ms tick. Idle cost stays at 100ms.
+            let sliding = barRects.contains { Self.rise(of: $0) > 0.5 }
+            let revealImminent = barRects.isEmpty
+                && (CGEvent(source: nil)?.location.y ?? .greatestFiniteMagnitude) <= 2
+            let interval: DispatchTimeInterval = (sliding || revealImminent)
+                ? .milliseconds(16) : .milliseconds(100)
+            self.positionSource?.schedule(deadline: .now() + interval, repeating: interval)
+
             DispatchQueue.main.async {
                 if mc && !self.missionControlActive {
                     self.missionControlActive = true
@@ -528,14 +540,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let rect = NSRect(x: cg.origin.x,
                               y: primary.frame.height - cg.origin.y - cg.height,
                               width: cg.width, height: cg.height)
-            // A menu bar is flush with a screen's top and at least half as
-            // wide as that screen — nothing else lives at this window level.
+            // A menu bar is at a screen's top edge — settled flush with it, or
+            // above it mid slide (the reveal/hide animation moves the real
+            // window bounds) — and at least half as wide as that screen.
+            // Nothing else lives at this window level.
             let isBar = NSScreen.screens.contains { screen in
-                abs(rect.maxY - screen.frame.maxY) < 1
+                rect.maxY >= screen.frame.maxY - 1
+                    && rect.minY <= screen.frame.maxY + 1
                     && rect.width >= screen.frame.width * 0.5
             }
             return isBar ? rect : nil
         }
+    }
+
+    /// How far above its settled position a bar window currently sits — zero
+    /// once the reveal animation lands, positive mid slide (in or out).
+    static func rise(of barRect: NSRect) -> CGFloat {
+        let screen = NSScreen.screens.first {
+            barRect.minX >= $0.frame.minX - 1 && barRect.maxX <= $0.frame.maxX + 1
+        } ?? NSScreen.screens.first
+        guard let screen else { return 0 }
+        return max(0, barRect.maxY - screen.frame.maxY)
     }
 
     func positionOverlay(barRects: [NSRect]) {
@@ -549,12 +574,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // Mid slide, ride the bar: shift the settled frame up by the bar's
+        // current rise so the rainbow moves with the bar instead of popping
+        // in after the animation lands. AX isn't queried during the slide —
+        // it reports settled layout coordinates, so the cached frame plus
+        // the measured rise is both correct and cheap at animation cadence.
+        let rise = barRects.map { Self.rise(of: $0) }.max() ?? 0
+
         let frame: NSRect
-        if let axFrame = queryAppleMenuFrame() {
+        if rise <= 0.5, let axFrame = queryAppleMenuFrame() {
             lastAXFrame = axFrame
             frame = axFrame
         } else if let cached = lastAXFrame {
-            frame = cached
+            frame = cached.offsetBy(dx: 0, dy: rise)
         } else {
             // No AX frame and nothing cached: place mathematically off the
             // bar's measured rect, or stay hidden — a window with no sane
