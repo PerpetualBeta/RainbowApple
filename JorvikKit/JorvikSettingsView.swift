@@ -20,11 +20,13 @@ struct JorvikSettingsView<AppSettings: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text("\(appName) Settings")
-                .font(.headline)
-                .padding(.top, 16)
-                .padding(.bottom, 8)
-
+            // No heading here. `showWindow` puts the same string in the window
+            // title, and drawing it again inside the pane said "<App> Settings"
+            // twice, one line under the other. The title bar is where macOS
+            // puts it, so that is the copy that stays.
+            //
+            // The heading was also carrying the pane's top inset, so the Form
+            // takes that on below.
             Form {
                 // App-specific settings first (if any)
                 appSettings()
@@ -48,6 +50,8 @@ struct JorvikSettingsView<AppSettings: View>: View {
 
             }
             .formStyle(.grouped)
+            // The inset the removed heading used to provide.
+            .padding(.top, 8)
 
             HStack {
                 Spacer()
