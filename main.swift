@@ -11,10 +11,9 @@ class RainbowAppleView: NSView {
     /// Scale factor for the rainbow fill — 8% bigger than the system Apple
     /// glyph so sub-pixel edges don't bleed through.
     static let rainbowScale: CGFloat = 1.08
-    /// Scale factor for the backdrop mask — only fractionally bigger than
-    /// the rainbow. The backdrop exists to cover sub-pixel grey bleed from
-    /// the system Apple beneath; its opaque core should sit almost entirely
-    /// under the rainbow so no visible backdrop-coloured ring shows.
+    /// Scale factor for the backdrop mask: the size of the system Apple, so
+    /// the backdrop hides it and the 8%-larger rainbow covers the backdrop
+    /// completely. See `BackdropTuning` for why it is no longer larger.
     static var backdropScale: CGFloat { BackdropTuning.scale }
 
     var fontSize: CGFloat = 22
@@ -145,12 +144,23 @@ class RainbowAppleView: NSView {
 // MARK: - Menu-bar-matching backdrop, masked to an Apple-shaped halo
 
 /// The backdrop's three tunables, read from defaults at launch so they can be
-/// tried on the real menu bar without a rebuild. Unset, each is the value it
-/// had before these existed.
+/// tried on the real menu bar without a rebuild.
 ///
-///   defaults write cc.jorviksoftware.RainbowApple backdropMaterial headerView
-///   defaults write cc.jorviksoftware.RainbowApple backdropFeather -float 0.1
-///   defaults write cc.jorviksoftware.RainbowApple backdropScale -float 1.0
+/// **The built-in values changed on 2026-09-29, for macOS 27's glass menu
+/// bar.** The old ones (titlebar material, a 20% feather, 1.08 scale) left a
+/// white edge round the rainbow in light mode: the frosted titlebar material
+/// is lighter than the glass, and a 1.08 backdrop stuck out past the rainbow.
+/// Measured against a bar at brightness 166, the brightest pixel round the
+/// logo was +72 and the average lift +6.3. All thirteen materials were tried
+/// on the real bar: fullScreenUI was closest (+47, +4.1) but none removed the
+/// edge. What did was size: at 1.0 the backdrop is exactly the system Apple,
+/// which the 1.08 rainbow covers completely, so nothing of the backdrop shows
+/// and there is nothing left to feather. fullScreenUI, no feather, 1.0: +0.8
+/// average, no visible edge in light or dark mode.
+///
+///   defaults write cc.jorviksoftware.RainbowApple backdropMaterial titlebar
+///   defaults write cc.jorviksoftware.RainbowApple backdropFeather -float 0.2
+///   defaults write cc.jorviksoftware.RainbowApple backdropScale -float 1.08
 enum BackdropTuning {
     static var material: NSVisualEffectView.Material {
         switch UserDefaults.standard.string(forKey: "backdropMaterial") {
@@ -166,18 +176,19 @@ enum BackdropTuning {
         case "contentBackground": return .contentBackground
         case "underWindowBackground": return .underWindowBackground
         case "underPageBackground": return .underPageBackground
-        default: return .titlebar
+        case "titlebar": return .titlebar
+        default: return .fullScreenUI
         }
     }
     /// The feathered band's blur radius, as a fraction of the bar's height.
     static var featherFraction: CGFloat {
         let v = UserDefaults.standard.double(forKey: "backdropFeather")
-        return UserDefaults.standard.object(forKey: "backdropFeather") == nil ? 0.20 : CGFloat(v)
+        return UserDefaults.standard.object(forKey: "backdropFeather") == nil ? 0 : CGFloat(v)
     }
     /// The backdrop mask's size against the system Apple glyph.
     static var scale: CGFloat {
         let v = UserDefaults.standard.double(forKey: "backdropScale")
-        return v > 0 ? CGFloat(v) : 1.08
+        return v > 0 ? CGFloat(v) : 1.0
     }
 }
 
