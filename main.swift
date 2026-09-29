@@ -372,12 +372,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // the pointer is near a top edge or was within the grace period
             // — the window in which a reveal or hide can begin — so the
             // overlay rides both slides instead of popping on a 100ms tick.
+            // Also while Mission Control is open, so the rainbow returns the
+            // tick the shield goes rather than up to 100ms later: measured,
+            // it came back 27-153ms after Mission Control's last window left.
             // Idle cost stays at 100ms.
             let sliding = barRects.contains { Self.rise(of: $0) > 0.5 }
             let nearTop = Self.pointerNearScreenTop()
             if nearTop { self.pointerLastNearTop = Date() }
             let withinGrace = Date().timeIntervalSince(self.pointerLastNearTop) < Self.hideGracePeriod
-            let interval: DispatchTimeInterval = (sliding || nearTop || withinGrace)
+            let interval: DispatchTimeInterval = (sliding || nearTop || withinGrace || mc)
                 ? .milliseconds(16) : .milliseconds(100)
             self.positionSource?.schedule(deadline: .now() + interval, repeating: interval)
 
@@ -712,8 +715,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// the wallpaper (a negative layer) and a small highlight overlay.
     ///
     /// So on 27 the test is a WindowManager window above the normal layer that
-    /// spans a display's full width at its top edge. WindowManager is found by
-    /// bundle identifier, not owner name, because owner names localise.
+    /// covers a whole display: the shield. The Spaces Bar alone does not count,
+    /// because it outlives the shield by about 100 ms at the end of the close
+    /// animation (measured: shield gone at 455-490 ms after Escape, bar at
+    /// 560-597 ms, with its bounds and alpha unchanged until it went), and the
+    /// rainbow came back noticeably late waiting for it. The shield is present
+    /// in both stages, compact (bar 96pt) and expanded (226pt), on every
+    /// display. WindowManager is found by bundle identifier, not owner name,
+    /// because owner names localise.
     private static func isMissionControlActive(in windows: [[String: Any]]) -> Bool {
         if windows.contains(where: { w in
             (w["kCGWindowOwnerName"] as? String) == "Dock" && (w["kCGWindowLayer"] as? Int) == 18
@@ -733,6 +742,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 return abs(cg.minX - screen.frame.minX) <= 1
                     && abs(cg.minY - top) <= 1
                     && cg.width >= screen.frame.width - 1
+                    && cg.height >= screen.frame.height - 1
             }
         }
     }
