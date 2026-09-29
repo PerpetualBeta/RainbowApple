@@ -701,12 +701,50 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         positionOverlay(barRects: Self.menuBarWindowRects(in: Self.onScreenWindows()))
     }
 
-    /// Detect Mission Control by checking for Dock-owned windows at layer 18,
-    /// which only appear while Mission Control is open.
+    /// Detect Mission Control from the windows only it puts on screen.
+    ///
+    /// Up to macOS 26 the Dock draws it, with windows at layer 18. On macOS 27
+    /// WindowManager draws it instead and no Dock window at 18 appears, so the
+    /// rainbow stayed on top of both stages of the Spaces bar. Measured on 27,
+    /// present only while Mission Control is open: WindowManager's "Spaces Bar"
+    /// (layer 14, full width, 96pt at the top of each display) and
+    /// "ExposeShieldWindow" (layer 19, the whole display). Its other windows are
+    /// the wallpaper (a negative layer) and a small highlight overlay.
+    ///
+    /// So on 27 the test is a WindowManager window above the normal layer that
+    /// spans a display's full width at its top edge. WindowManager is found by
+    /// bundle identifier, not owner name, because owner names localise.
     private static func isMissionControlActive(in windows: [[String: Any]]) -> Bool {
-        windows.contains { w in
+        if windows.contains(where: { w in
             (w["kCGWindowOwnerName"] as? String) == "Dock" && (w["kCGWindowLayer"] as? Int) == 18
+        }) { return true }
+
+        guard let wmPID = windowManagerPID() else { return false }
+        let screens = NSScreen.screens
+        guard let primary = screens.first else { return false }
+        return windows.contains { w in
+            guard (w["kCGWindowOwnerPID"] as? pid_t) == wmPID,
+                  let layer = w["kCGWindowLayer"] as? Int, layer > 0,
+                  let boundsDict = w["kCGWindowBounds"] as? NSDictionary,
+                  let cg = CGRect(dictionaryRepresentation: boundsDict) else { return false }
+            // CG rects have a top-left origin on the primary display.
+            return screens.contains { screen in
+                let top = primary.frame.height - screen.frame.maxY
+                return abs(cg.minX - screen.frame.minX) <= 1
+                    && abs(cg.minY - top) <= 1
+                    && cg.width >= screen.frame.width - 1
+            }
         }
+    }
+
+    /// WindowManager's process, looked up again only if it has gone away.
+    private static var windowManager: NSRunningApplication?
+    private static func windowManagerPID() -> pid_t? {
+        if windowManager == nil || windowManager?.isTerminated == true {
+            windowManager = NSRunningApplication
+                .runningApplications(withBundleIdentifier: "com.apple.WindowManager").first
+        }
+        return windowManager?.processIdentifier
     }
 
     @objc func openAbout() {
