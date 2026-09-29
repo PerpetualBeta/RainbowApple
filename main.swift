@@ -15,7 +15,7 @@ class RainbowAppleView: NSView {
     /// the rainbow. The backdrop exists to cover sub-pixel grey bleed from
     /// the system Apple beneath; its opaque core should sit almost entirely
     /// under the rainbow so no visible backdrop-coloured ring shows.
-    static let backdropScale: CGFloat = 1.08
+    static var backdropScale: CGFloat { BackdropTuning.scale }
 
     var fontSize: CGFloat = 22
 
@@ -144,6 +144,43 @@ class RainbowAppleView: NSView {
 
 // MARK: - Menu-bar-matching backdrop, masked to an Apple-shaped halo
 
+/// The backdrop's three tunables, read from defaults at launch so they can be
+/// tried on the real menu bar without a rebuild. Unset, each is the value it
+/// had before these existed.
+///
+///   defaults write cc.jorviksoftware.RainbowApple backdropMaterial headerView
+///   defaults write cc.jorviksoftware.RainbowApple backdropFeather -float 0.1
+///   defaults write cc.jorviksoftware.RainbowApple backdropScale -float 1.0
+enum BackdropTuning {
+    static var material: NSVisualEffectView.Material {
+        switch UserDefaults.standard.string(forKey: "backdropMaterial") {
+        case "menu": return .menu
+        case "popover": return .popover
+        case "sidebar": return .sidebar
+        case "headerView": return .headerView
+        case "sheet": return .sheet
+        case "windowBackground": return .windowBackground
+        case "hudWindow": return .hudWindow
+        case "fullScreenUI": return .fullScreenUI
+        case "toolTip": return .toolTip
+        case "contentBackground": return .contentBackground
+        case "underWindowBackground": return .underWindowBackground
+        case "underPageBackground": return .underPageBackground
+        default: return .titlebar
+        }
+    }
+    /// The feathered band's blur radius, as a fraction of the bar's height.
+    static var featherFraction: CGFloat {
+        let v = UserDefaults.standard.double(forKey: "backdropFeather")
+        return UserDefaults.standard.object(forKey: "backdropFeather") == nil ? 0.20 : CGFloat(v)
+    }
+    /// The backdrop mask's size against the system Apple glyph.
+    static var scale: CGFloat {
+        let v = UserDefaults.standard.double(forKey: "backdropScale")
+        return v > 0 ? CGFloat(v) : 1.08
+    }
+}
+
 /// Visual-effect backdrop that masks itself to a slightly-enlarged Apple
 /// glyph shape with a feathered outer edge, so the backdrop fades into
 /// the menu-bar background rather than reading as a defined halo ring.
@@ -203,7 +240,7 @@ final class MenuBarBackdrop: NSVisualEffectView {
             path: expanded,
             size: bounds.size,
             backingScale: backingScale,
-            featherRadius: bounds.height * 0.20
+            featherRadius: bounds.height * BackdropTuning.featherFraction
         ) {
             cachedMaskImage = generated
             cachedMaskKey = key
@@ -436,7 +473,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Apple logo is hidden by the backdrop rather than bleeding through.
         let bounds = NSRect(x: 0, y: 0, width: 20, height: 20)
         let backdrop = MenuBarBackdrop(frame: bounds)
-        backdrop.material = .titlebar
+        backdrop.material = BackdropTuning.material
         backdrop.blendingMode = .behindWindow
         backdrop.state = .active
         backdrop.autoresizingMask = [.width, .height]
