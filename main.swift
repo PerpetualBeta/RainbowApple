@@ -809,7 +809,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         JorvikAboutView.showWindow(
             appName: "RainbowApple",
             repoName: "RainbowApple",
-            productPage: "utilities/rainbowapple"
+            productPage: "utilities/rainbowapple",
+            credits: [
+                JorvikCredit(
+                    name: "Georg Dresler",
+                    contribution: L10n.string(
+                        "credits.georg",
+                        defaultValue: "suggested the option to hide the menu bar icon"
+                    ),
+                    url: URL(string: "https://github.com/ge-org")
+                ),
+                JorvikCredit(
+                    name: "Matthew J. Sorenson",
+                    contribution: L10n.string(
+                        "credits.matthew",
+                        defaultValue: "reported the overlay sticking when the menu bar auto-hides"
+                    ),
+                    url: URL(string: "https://github.com/emjayess")
+                )
+            ]
         )
     }
 
