@@ -132,21 +132,9 @@ struct JorvikAboutView: View {
         credits: [JorvikCredit] = []
     ) {
         if let window = existingWindow {
-            // If the cached window is hidden, bring it to the active space so
-            // the user isn't yanked to wherever it was last shown. If it's
-            // still visible on another space, leave default behavior — macOS
-            // will switch to that space, which is what the user expects when
-            // a window of theirs is already open elsewhere.
-            if !window.isVisible {
-                window.collectionBehavior.insert(.moveToActiveSpace)
-                window.makeKeyAndOrderFront(nil)
-                DispatchQueue.main.async {
-                    window.collectionBehavior.remove(.moveToActiveSpace)
-                }
-            } else {
-                window.makeKeyAndOrderFront(nil)
-            }
-            NSApp.activate(ignoringOtherApps: true)
+            // Whether it was closed or left open on another space, it comes to
+            // this one; showing it never switches spaces.
+            JorvikWindowHelper.showOnActiveSpace(window)
             return
         }
 
@@ -164,9 +152,7 @@ struct JorvikAboutView: View {
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
         window.setContentSize(controller.view.fittingSize)
-        JorvikWindowHelper.centreOnActiveDisplay(window)
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        JorvikWindowHelper.showOnActiveSpace(window)
         existingWindow = window
     }
 }

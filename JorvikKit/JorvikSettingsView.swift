@@ -83,21 +83,9 @@ struct JorvikSettingsView<AppSettings: View>: View {
         if let window = JorvikSettingsWindowCache.existingWindow {
             // Sized for whichever display it last appeared on, which may not be this one.
             JorvikSettingsWindowCache.sizer?.clamp()
-            // If the cached window is hidden, bring it to the active space so
-            // the user isn't yanked to wherever it was last shown. If it's
-            // still visible on another space, leave default behavior — macOS
-            // will switch to that space, which is what the user expects when
-            // a window of theirs is already open elsewhere.
-            if !window.isVisible {
-                window.collectionBehavior.insert(.moveToActiveSpace)
-                window.makeKeyAndOrderFront(nil)
-                DispatchQueue.main.async {
-                    window.collectionBehavior.remove(.moveToActiveSpace)
-                }
-            } else {
-                window.makeKeyAndOrderFront(nil)
-            }
-            NSApp.activate(ignoringOtherApps: true)
+            // Whether it was closed or left open on another space, it comes to
+            // this one; showing it never switches spaces.
+            JorvikWindowHelper.showOnActiveSpace(window)
             return
         }
 
@@ -137,9 +125,7 @@ struct JorvikSettingsView<AppSettings: View>: View {
         // correction below stays as the safety net, since SwiftUI's own focus
         // machinery can still claim it after this point.
         window.initialFirstResponder = nil
-        JorvikWindowHelper.centreOnActiveDisplay(window)
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        JorvikWindowHelper.showOnActiveSpace(window)
         scrollToTop(controller.view, in: window)
         JorvikSettingsWindowCache.existingWindow = window
         // The cap has to survive the display changing under it. A window sized for a
